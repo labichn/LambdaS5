@@ -1,4 +1,3 @@
-module C = Ljs_clos
 module D = Ljs_delta
 module L = Ljs_eval
 module GC = Ljs_gc
