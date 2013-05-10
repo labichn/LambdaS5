@@ -2,7 +2,7 @@ open List
 open Prelude
 open Ljs
 open Ljs_eval
-open Ljs_cesk
+open Ljs_ceshk
 open Ljs_syntax
 open Ljs_pretty_html
 open Reachability
@@ -326,7 +326,7 @@ module S5 = struct
 
   let ljs_cesk cmd () =
     let ljs = pop_ljs cmd in
-    let answer = Ljs_cesk.eval_expr ljs (desugar !json_path) !stack_trace in
+    let answer = Ljs_ceshk.eval_expr ljs (desugar !json_path) !stack_trace in
     push_answer answer
 
   let ljs_eval cmd () =
@@ -337,7 +337,7 @@ module S5 = struct
   let continue_cesk_eval cmd () =
     let ljs = pop_ljs cmd in
     let Ljs_eval.Answer (_, _, envs, store) = pop_answer cmd in
-    let answer = Ljs_cesk.continue_eval
+    let answer = Ljs_ceshk.continue_eval
       ljs (desugar !json_path) !stack_trace (last envs) store in
     push_answer answer
 
