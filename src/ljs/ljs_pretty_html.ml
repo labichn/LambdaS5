@@ -135,7 +135,7 @@ let html_of_paths paths =
 
 let html_of_answer answer filter =
   match answer with
-  | Ljs_eval.Answer (_, _, envs, store) ->
+  | Answer.Answer (_, _, envs, store) ->
     let store = (Store.to_map (fst store), Store.to_map (snd store)) in
     let env = (* Is (last envs) correct? *)
       IdMap.filter (fun id _ -> List.mem id Env_free_vars.ids) (last envs) in

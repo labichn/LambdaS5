@@ -1,13 +1,12 @@
 #!/bin/bash
 
-if [ ! -f 'init.heap' ]; then
-  echo "Rebuilding heap snapshots..."
-  source save_snapshots.sh &> /dev/null
-fi
-
 if [ $# -gt 1 ]; then
   TYPE=$1
-  if [ $TYPE == 's5' -o $TYPE == 'cesk' ]; then
+  if [ $TYPE == 's5' -o $TYPE == 'cesk' -o $TYPE == 'machine' ]; then
+      if [ ! -f 'init.heap' ]; then
+          echo "Rebuilding heap snapshots..."
+          source save_snapshots.sh &> /dev/null
+      fi
       VERB=''
       if [ "$#" -gt 2 -a "$3" == "-v" ]; then
         VERB='t'

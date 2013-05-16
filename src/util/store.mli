@@ -2,7 +2,7 @@ open Format
 open FormatExt
 open Prelude
 
-type loc
+type loc = int
 module LocSet : SetExt.S with type elt = loc
 module LocMap : MapExt.S with type key = loc
 

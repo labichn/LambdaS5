@@ -1,5 +1,4 @@
 open Prelude
-module S = Ljs_syntax
 open Format
 open Ljs
 open Ljs_values
@@ -11,9 +10,8 @@ open SpiderMonkey
 open Exprjs_to_ljs
 open Js_to_exprjs
 open Str
-
-
-type answer = Answer of S.exp list * value * env list * store
+open Answer
+module S = Ljs_syntax
 
 let bool b = match b with
   | true -> True

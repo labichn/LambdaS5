@@ -5,7 +5,7 @@ module Marshal = Marshal
 
 module LocMap = Store.LocMap
 
-type answer = Ljs_eval.answer
+type answer = Answer.answer
 
 type node =
   | ValueNode of value
@@ -102,16 +102,16 @@ let find_frozen_objs store =
 *)
 
 let accessible_primordials init_ans ses_ans =
-  let Ljs_eval.Answer (_, _, _, (init_obj_store, init_var_store)) = init_ans in
-  let Ljs_eval.Answer (_, _, _, (ses_obj_store, ses_var_store)) = ses_ans in
+  let Answer.Answer (_, _, _, (init_obj_store, init_var_store)) = init_ans in
+  let Answer.Answer (_, _, _, (ses_obj_store, ses_var_store)) = ses_ans in
   let accessible_primordials =
     Store.filter (fun loc _ -> Store.mem loc init_obj_store) ses_obj_store in
   (accessible_primordials, ses_var_store)
 
 let ses_check init_ans ses_ans =
-  let Ljs_eval.Answer (init_exps, init_value, init_envs,
+  let Answer.Answer (init_exps, init_value, init_envs,
                        (init_obj_store, init_var_store)) = init_ans in
-  let Ljs_eval.Answer (ses_exps, ses_value, ses_envs,
+  let Answer.Answer (ses_exps, ses_value, ses_envs,
                        (ses_obj_store, ses_var_store)) = ses_ans in
   let init_env = last init_envs in
   let ses_env = last ses_envs in
