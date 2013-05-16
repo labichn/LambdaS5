@@ -24,7 +24,7 @@ let pretty_value value = match value with
   | primitive -> FE.text (V.pretty_value primitive)
 
 let rec pretty_value_store v store = match v with
-  | V.ObjLoc loc -> pretty_obj store (SO.get_obj store loc)
+  | V.ObjLoc loc -> pretty_obj store (SO.get_obj loc store)
   | _ -> pretty_value v
 and pretty_obj store (avs, props) = 
     let proplist = S.IdMap.fold (fun k v l -> (k, v)::l) props [] in

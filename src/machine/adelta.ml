@@ -24,7 +24,7 @@ let typeof store v = str begin match v with
   | V.Num _ -> "number"
   | V.True 
   | V.False -> "boolean"
-  | V.ObjLoc loc -> begin match  SO.get_obj store loc with
+  | V.ObjLoc loc -> begin match SO.get_obj loc store with
       | ({ V.code = Some cexp }, _) -> "function"
       | _ -> "object"
   end
@@ -113,7 +113,7 @@ let pretty store v =
   S.printf "%s\n%!" (PP.string_of_value v store); V.Undefined
 
 let is_extensible store obj = match obj with
-  | V.ObjLoc loc -> begin match  SO.get_obj store loc with
+  | V.ObjLoc loc -> begin match SO.get_obj loc store with
       | ({ V.extensible = true; }, _) -> V.True
       | _ -> V.False
   end
@@ -122,13 +122,13 @@ let is_extensible store obj = match obj with
 (* Implement this here because there's no need to expose the class
    property outside of the delta function *)
 let object_to_string store obj = match obj with
-  | V.ObjLoc loc -> begin match  SO.get_obj store loc with
+  | V.ObjLoc loc -> begin match SO.get_obj loc store with
       | ({ V.klass = s }, _) -> str ("[object " ^ s ^ "]")
   end
   | _ -> raise (E.PrimErr ([], str "object-to-string, wasn't given object"))	
 
 let is_array store obj = match obj with
-  | V.ObjLoc loc -> begin match  SO.get_obj store loc with
+  | V.ObjLoc loc -> begin match SO.get_obj loc store with
       | ({ V.klass = "Array"; }, _) -> V.True
       | _ -> V.False
     end
@@ -307,14 +307,14 @@ let same_value store v1 v2 = bool begin
 end
 
 let rec has_property store obj field = match obj, field with
-  | V.ObjLoc loc, V.String s -> (match  SO.get_obj store loc, s with
+  | V.ObjLoc loc, V.String s -> (match SO.get_obj loc store, s with
     | ({ V.proto = pvalue; }, props), s ->
       if (S.IdMap.mem s props) then bool true
       else has_property store pvalue field)
   | _ -> bool false
 
 let has_own_property store obj field = match obj, field with
-  | V.ObjLoc loc, V.String s -> (match  SO.get_obj store loc with
+  | V.ObjLoc loc, V.String s -> (match SO.get_obj loc store with
     | (attrs, props) -> bool (S.IdMap.mem s props))
   | V.ObjLoc loc, _ ->
     raise (E.PrimErr ([], str "has-own-property: field not a string"))
@@ -388,7 +388,7 @@ let to_fixed store a b = match a, b with
   | _ -> raise (E.PrimErr ([], str "to-fixed didn't get 2 numbers"))
 
 let rec is_accessor store a b = match a, b with
-  | V.ObjLoc loc, V.String s -> (match  SO.get_obj store loc with
+  | V.ObjLoc loc, V.String s -> (match SO.get_obj loc store with
     | (attrs, props) ->
       if S.IdMap.mem s props
       then let prop = S.IdMap.find s props in

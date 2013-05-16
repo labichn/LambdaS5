@@ -9,22 +9,23 @@ module SYN = Ljs_syntax
 module V = Avalues
 module S = Shared
 
+type loc = S.loc
+
 type state = (* my kingdom for simple unions, could get rid of half of these *)
-| Ev of SYN.exp * V.env * K.handl * K.kont
-| EvA of SYN.attrs * V.env * K.handl * K.kont
-| EvP of (string * SYN.prop) * V.env * K.handl * K.kont
-| Co of K.kont * V.avalue * K.handl
-| CoA of K.kont * V.attrsv * K.handl
-| CoP of K.kont * (string * V.propv) * K.handl
-| Ap of S.Pos.t * V.avalue * V.avalue list * K.handl * K.kont
-| Exn of exn * V.env * K.handl
+| Ev of SYN.exp * V.env * loc * loc (* K.handl * K.kont *)
+| EvA of SYN.attrs * V.env * loc * loc (* K.handl * K.kont *)
+| EvP of (string * SYN.prop) * V.env * loc * loc (* K.handl * K.kont *)
+| Co of loc (* K.kont *) * V.avalue * loc (* K.handl *)
+| CoA of loc (* K.kont *) * V.attrsv * loc (* K.handl *)
+| CoP of loc (* K.kont *) * (string * V.propv) * loc (* K.handl *)
+| Ap of S.Pos.t * V.avalue * V.avalue list * loc * loc (* K.handl * K.kont *)
+| Exn of exn * V.env * loc (* K.handl *)
 | Ans of V.avalue
 
 (*
 
 TODO:
 
-- CESHK -> CESHK*
 - garbage collection
 - baseline analyzer
 
@@ -37,7 +38,7 @@ let err message =
     S.eprintf "%s\n" message;
     failwith "Runtime error"
 
-
+(*
 let string_of_kont k = match k with
   | K.SetBang (_, _) -> "k.setbang"
   | K.GetAttr (_, _, _, _) -> "k.getattr"
@@ -143,43 +144,80 @@ let string_kont_state state = match state with
   | Ap (_, _, _, _, _) -> ""
   | Exn (_, e, _) -> "exn"
   | Ans _ -> "ans"
+*)
 
+let hloc_of_handl handl = match handl with
+ | K.Cat (_, _, _, _, h) -> h
+ | K.Lab (_, _, _, h) -> h
+ | K.Fin (_, _, _, h) -> h
+ | K.MtH -> failwith "no hloc in mth, something's wrong!"
+let hloc_of_state state = match state with
+  | Ev (_, _, h, _) -> h
+  | EvA (_, _, h, _) -> h
+  | EvP (_, _, h, _) -> h
+  | Co (_, _, h) -> h
+  | CoA (_, _, h) -> h
+  | CoP (_, _, h) -> h
+  | Ap (_, _, _, h, _) -> h
+  | Exn (_, _, h) -> h
+  | Ans _ -> failwith "no hloc in ans, something's wrong!"
+let kloc_of_state state = match state with
+  | Ev (_, _, _, k) -> k
+  | EvA (_, _, _, k) -> k
+  | EvP (_, _, _, k) -> k
+  | Ap (_, _, _, _, k) -> k
+  | Co (k, _, _) -> k
+  | CoA (k, _, _) -> k
+  | CoP (k, _, _) -> k
+  | Exn _ -> failwith "no kloc in exn, something's wrong!"
+  | Ans _ -> failwith "no kloc in ans, something's wrong!"
 
-(* eval_ceshk : (string -> Ljs_syntax.exp)
- *              state * (objectv Store.t * value Store.t)
- *              int ->
- *              (value * store)
- * Portions of these cases are in the vein of or replications of code in
- * ljs_eval, especially pertaining to attrs and fields. Both credit and
- * thanks go to the original author(s). *)
-
-let rec eval_ceshk desugar (state, store) =
+(* machine_eval : (string -> Ljs_syntax.exp)
+ *                state 
+ *                store ->
+ *                A.MAnswer (value * store)
+ *)
+let rec machine_eval desugar state store =
   begin
 (*    print_string ((string_of_state state) ^ "$$"); *)
-    let eval sys' = eval_ceshk desugar sys' in
-    let eval' state' = eval (state', store) in
+    let eval state' store' = machine_eval desugar state' store' in
+    let eval' state' = eval state' store in
+    let alloc_kont = SO.add_kont in
+    let alloc_handl = SO.add_handl in
+    let ap_ak kont pos f args hloc =
+      let kloc, store' = alloc_kont kont store in
+      eval (Ap (pos, f, args, hloc, kloc)) store' in
+    let ev_ak kont exp env hloc =
+      let kloc, store' = alloc_kont kont store in
+      eval (Ev (exp, env, hloc, kloc)) store' in
+    let ev_ak' kont exp env hloc store =
+      let kloc, store' = alloc_kont kont store in
+      eval (Ev (exp, env, hloc, kloc)) store' in
+    let eva_ak kont attr env hloc =
+      let kloc, store' = alloc_kont kont store in
+      eval (EvA (attr, env, hloc, kloc)) store' in
+    let evp_ak kont strp env hloc =
+      let kloc, store' = alloc_kont kont store in
+      eval (EvP (strp, env, hloc, kloc)) store' in
+    let ev_ah handl exp env =
+      let hloc, store' = alloc_handl handl store in
+      let kloc, store'' = alloc_kont K.Mt store' in
+      eval (Ev (exp, env, hloc, kloc)) store'' in
     match state with
     | Ans (valu) -> A.MAnswer (valu, None, store)
-    (* at empty with no handlers... victory! *)
-    | Co (K.Mt, valu, K.MtH) -> eval' (Ans valu)
-    (* jump back through handlers, except finally! *)
-    | Co (K.Mt, valu, K.Lab (name, env, k, h)) -> eval' (Co (k, valu, h))
-    | Co (K.Mt, valu, K.Cat (_, _, _, k, h)) ->   eval' (Co (k, valu, h))
-    | Co (K.Mt, valu, K.Fin (exp, env, k, h)) ->
-      eval' (Ev (exp, env, h, K.Finally2 (valu)))
     (* function application *)
     | Ap (pos, V.Closure (env, xs, body), args, h, k) ->
       let alloc_arg argval argname (store, env) =
-        let (new_loc, store') = SO.add_val store argval in
-        let env' = SO.add_loc env argname new_loc in
+        let (new_loc, store') = SO.add_val argval store in
+        let env' = SO.add_loc argname new_loc env in
         (store', env') in
       if (List.length args) != (List.length xs) then
         arity_mismatch_err pos xs args
       else
         let (store', env') = (List.fold_right2 alloc_arg args xs (store, env)) in
-        eval (Ev (body, env', h, k), store')
+        eval (Ev (body, env', h, k)) store'
     | Ap (pos, V.ObjLoc loc, args, h, k) ->
-      (match SO.get_obj store loc with
+      (match SO.get_obj loc store with
       | { V.code = Some f }, _ -> eval' (Ap (pos, f, args, h, k))
       | _ -> failwith "Applied an object without a code attribute")
     | Ap (pos, f, args, h, k) -> failwith (interp_error pos "Applied non-function")
@@ -200,34 +238,19 @@ let rec eval_ceshk desugar (state, store) =
       let free = SYN.free_vars body in
       let env' = S.IdMap.filter (fun var _ -> S.IdSet.mem var free) env in
       eval' (Co (k, V.Closure (env', xs, body), h))
+    (* SYN.SetBang (pos, name, next)
+     * Set name to next. *)
     | Ev (SYN.SetBang (p, x, new_val_exp), env, h, k) ->
-      (match try Some (S.IdMap.find x env) with Not_found -> None with
-      | Some loc -> eval' (Ev (new_val_exp, env, h, (K.SetBang (loc, k))))
+      (match try Some (SO.get_loc x env) with Not_found -> None with
+      | Some loc -> ev_ak (K.SetBang (loc, k)) new_val_exp env h
       | None     -> failwith ("[interp1] Unbound identifier: " ^ x
                               ^ " in identifier lookup at " ^
                                 (S.Pos.string_of_pos p)))
-    (* SYN.SetBang (pos, name, next)
-     * Set name to next. *)
-    | Co (K.SetBang (loc, k), v, h) ->
-      let store' = SO.set_val store loc v in
-      eval (Co (k, v, h), store')
     (* SYN.Object (pos, attrs, props)
      * Evaluates the attrs, props, then adds the object to the
      * obj half of the store. *)
     | Ev (SYN.Object (p, attrs, props), env, h, k) ->
-      eval' (EvA (attrs, env, h, K.Object (props, env, k)))
-    | CoA (K.Object ([], _, k), valu, h) -> (* empty props case *)
-      let obj_loc, store' = SO.add_obj store (valu, S.IdMap.empty) in
-      eval (Co (k, V.ObjLoc obj_loc, h), store')
-    | CoA (K.Object (p::ps, env, k), attrsv, h) ->
-      eval' (EvP (p, env, h, K.Object2 (attrsv, ps, [], env, k)))
-    | CoP (K.Object2 (attrsv, p::ps, pvs, env, k), pv, h) ->
-      eval' (EvP (p, env, h, K.Object2 (attrsv, ps, pv::pvs, env, k)))
-    | CoP (K.Object2 (attrsv, [], pvs, env, k), pv, h) ->
-      let add_prop acc (name, propv) = S.IdMap.add name propv acc in
-      let propsv = List.fold_left add_prop S.IdMap.empty (pv::pvs) in
-      let obj_loc, store' = SO.add_obj store (attrsv, propsv) in
-      eval (Co (k, V.ObjLoc obj_loc, h), store')
+      eva_ak (K.Object (props, env, k)) attrs env h
     (* SYN.Data ({ exp; writable }, enum, config)
      * Evaluates exp, then continues with the propv to object creation.
      * SYN.Accessor ({ getter; setter }, enum, config)
@@ -235,15 +258,9 @@ let rec eval_ceshk desugar (state, store) =
     | EvP ((name, prop), env, h, k) ->
       (match prop with
       | SYN.Data ({ SYN.value = valu; SYN.writable = writable; }, enum, config) ->
-        eval' (Ev (valu, env, h, K.DataProp (name, writable, enum, config, k)))
+        ev_ak (K.DataProp (name, writable, enum, config, k)) valu env h
       | SYN.Accessor ({ SYN.getter = getter; SYN.setter = setter; }, enum, config) ->
-        eval' (Ev (getter, env, h, K.AccProp (name, setter, enum, config, env, k))))
-    | Co (K.DataProp (name, w, enum, config, k), valu, h) ->
-      eval' (CoP (k, (name, V.Data ({ V.value=valu; V.writable=w; }, enum, config)), h))
-    | Co (K.AccProp (name, setter, enum, config, env, k), getter_val, h) ->
-      eval' (Ev (setter, env, h, K.AccProp2 (name, getter_val, enum, config, env, k)))
-    | Co (K.AccProp2 (name, gv, enum, config, env, k), sv, h) ->
-      eval' (CoP (k, (name, V.Accessor ({ V.getter=gv; V.setter=sv; }, enum, config)), h))
+        ev_ak (K.AccProp (name, setter, enum, config, env, k)) getter env h)
     (* SYN.attrs : { primval; code; proto; class; extensible }
      * Evaluates optional exps primval, code, and proto, then continues
      * with an S.arrtsv. *)
@@ -261,333 +278,383 @@ let rec eval_ceshk desugar (state, store) =
                        V.klass=kls; V.extensible=ext } in
         eval' (CoA (k, attrsv, h))
       | (name, exp)::pairs ->
-        eval' (Ev (exp, env, h, K.Attrs (name, pairs, [], kls, ext, env, k))))
-    | Co (K.Attrs (name, (name', exp)::pairs, valus, kls, ext, env, k), valu, h) ->
-      eval' (Ev (exp, env, h, K.Attrs (name', pairs, (name, valu)::valus, kls, ext, env, k)))
-    | Co (K.Attrs (name, [], valus, kls, ext, env, k), valu, h) ->
-      let valus = (name, valu)::valus in
-      let rec opt_get name xs = match xs with
-        | [] -> None
-        | (name', valu)::xs' -> if name = name' then Some valu else opt_get name xs' in
-      let rec und_get name xs = match xs with
-        | [] -> V.Undefined
-        | (name', valu)::xs' -> if name = name' then valu else und_get name xs' in
-      let attrsv = { V.code=(opt_get "code" valus);
-                     V.proto=(und_get "proto" valus);
-                     V.primval=(opt_get "prim" valus);
-                     V.klass=kls;
-                     V.extensible=ext; } in
-      eval' (CoA (k, attrsv, h))
+        ev_ak (K.Attrs (name, pairs, [], kls, ext, env, k)) exp env h)
     (* SYN.GetAttr (pos, pattr, obj, field)
      * Get the pattr for the obj's field using Ljs_eval's get_attr. *)
     | Ev (SYN.GetAttr (_, attr, obj, field), env, h, k) ->
-      eval' (Ev (obj, env, h, K.GetAttr (attr, field, env, k)))
-    | Co (K.GetAttr (attr, field, env, k), obj_val, h) ->
-      eval' (Ev (field, env, h, K.GetAttr2 (attr, obj_val, env, k)))
-    | Co (K.GetAttr2 (attr, obj_val, env, k), field_val, h) ->
-      eval' (Co (k, SO.get_attr store attr obj_val field_val, h))
+      ev_ak (K.GetAttr (attr, field, env, k)) obj env h
     (* SYN.SetAttr (pos, pattr, obj, field, next)
      * The pattr for the obj's field is set to next, using Ljs_eval's
      * set_attr. *)
     | Ev (SYN.SetAttr (_, pattr, obj, field, next), env, h, k) ->
-      eval' (Ev (obj, env, h, K.SetAttr (pattr, field, next, env, k)))
-    | Co (K.SetAttr (pattr, field, next, env, k), obj_val, h) ->
-      eval' (Ev (field, env, h, K.SetAttr2 (pattr, next, obj_val, env, k)))
-    | Co (K.SetAttr2 (pattr, next, obj_val, env, k), field_val, h) ->
-      eval' (Ev (next, env, h, K.SetAttr3 (pattr, obj_val, field_val, env, k)))
-    | Co (K.SetAttr3 (pattr, obj_val, field_val, env, k), valu, h) ->
-      let b, store' = SO.set_attr store pattr obj_val field_val valu in
-      eval (Co (k, D.bool b, h), store')
+      ev_ak (K.SetAttr (pattr, field, next, env, k)) obj env h
     (* SYN.GetObjAttr (pos, oattr, obj)
      * Get the oattr for obj. *)
     | Ev (SYN.GetObjAttr (_, oattr, obj), env, h, k) ->
-      eval' (Ev (obj, env, h, K.GetObjAttr (oattr, env, k)))
-    | Co (K.GetObjAttr (oattr, env, k), obj_val, h) ->
-      (match obj_val with
-      | V.ObjLoc obj_loc -> (match SO.get_obj store obj_loc with
-        | (attrs, _) -> eval' (Co (k, SO.get_obj_attr attrs oattr, h)))
-      | _ -> failwith "[interp] GetObjAttr got a non-object.")
+      ev_ak (K.GetObjAttr (oattr, env, k)) obj env h
     (* SYN.SetObjAttr (pos, oattr, obj, next)
      * The oattr for obj is set to next. *)
     | Ev (SYN.SetObjAttr (_, oattr, obj, next), env, h, k) ->
-      eval' (Ev (obj, env, h, K.SetObjAttr (oattr, next, env, k)))
-    | Co (K.SetObjAttr (oattr, next, env, k), obj_val, h) ->
-      eval' (Ev (next, env, h, K.SetObjAttr2 (oattr, obj_val, env, k)))
-    | Co (K.SetObjAttr2 (oattr, obj_val, env, k), valu, h) ->
-      (match obj_val with
-      | V.ObjLoc loc -> (match SO.get_obj store loc with
-        | (attrs, props) ->
-          let attrs' = match oattr, valu with
-            | SYN.Proto, V.ObjLoc _
-            | SYN.Proto, V.Null -> { attrs with V.proto=valu }
-            | SYN.Extensible, V.True  -> { attrs with V.extensible=true }
-            | SYN.Extensible, V.False -> { attrs with V.extensible=false }
-            | SYN.Primval, v -> { attrs with V.primval=Some v }
-            | _ -> failwith "set object attr failed" in
-          eval (Co (k, valu, h), SO.set_obj store loc (attrs', props)))
-      | _ -> failwith "[interp] SetObjAttr got a non-object")
+      ev_ak (K.SetObjAttr (oattr, next, env, k)) obj env h
     (* SYN.GetField (pos, obj, field, body)
      * If the getter field in obj is evaluated and, is a data
      * property, continues with the value; if an accessor, evaluates
      * the getter with the body and the obj values as arguments. *)
     | Ev (SYN.GetField (p, obj, field, body), env, h, k) ->
-      eval' (Ev (obj, env, h, K.GetField (p, field, body, env, k)))
-    | Co (K.GetField (p, field, body, env, k), obj_val, h) ->
-      eval' (Ev (field, env, h, K.GetField2 (p, body, obj_val, env, k)))
-    | Co (K.GetField2 (p, body, obj_val, env, k), field_val, h) ->
-      eval' (Ev (body, env, h, K.GetField3 (p, obj_val, field_val, env, k)))
-    | Co (K.GetField3 (p, obj_val, field_val, env, k), body_val, h) ->
-      (match (obj_val, field_val) with
-      | (V.ObjLoc _, V.String s) -> (match SO.get_prop p store obj_val s with
-        | Some (V.Data ({V.value=v;}, _, _)) -> eval' (Co (k, v, h))
-        | Some (V.Accessor ({V.getter=g;},_,_)) ->
-          eval' (Ap (p, g, [obj_val; body_val], h, K.GetField4 (env, k)))
-        | None -> eval' (Co (k, V.Undefined, h)))
-      | _ -> failwith ("[interp] Get field didn't get an object and a string at "
-                       ^ S.Pos.string_of_pos p ^ "."))
-    | Co (K.GetField4 (env, k), acc_val, h) ->
-      eval' (Co (k, acc_val, h))
+      ev_ak (K.GetField (p, field, body, env, k)) obj env h
     (* SYN.OwnFieldNames (pos, obj)
      * Create an object in the store with a map of indices to all
      * obj's properties and the count of that map. *)
     | Ev (SYN.OwnFieldNames (p, obj), env, h, k) ->
-      eval' (Ev (obj, env, h, K.OwnFieldNames k))
-    | Co (K.OwnFieldNames k, obj_val, h) ->
-      (match obj_val with
-      | V.ObjLoc loc -> (match SO.get_obj store loc with
-        | (_, props) ->
-          let add_name n x m =
-            S.IdMap.add
-              (string_of_int x)
-              (V.Data ({ V.value = V.String n; writable = false; }, false, false))
-              m in
-          let names = S.IdMap.fold (fun k v l -> (k :: l)) props [] in
-          let props = List.fold_right2 add_name names (S.iota (List.length names)) S.IdMap.empty in
-          let d = float_of_int (List.length names) in
-          let final_props =
-            S.IdMap.add
-              "length"
-              (V.Data ({ V.value = V.Num d; writable = false; }, false, false))
-              props in
-          let (new_obj, store') = SO.add_obj store (V.d_attrsv, final_props) in
-          eval (Co (k, V.ObjLoc new_obj, h), store'))
-      | _ -> failwith "[interp] OwnFieldNames didn't get an object")
+      ev_ak (K.OwnFieldNames k) obj env h
     (* SYN.DeleteField(pos, obj, field)
      * Deletes field from obj. *)
     | Ev (SYN.DeleteField (p, obj, field), env, h, k) ->
-      eval' (Ev (obj, env, h, K.DeleteField (p, field, env, k)))
-    | Co (K.DeleteField (p, field, env, k), obj_val, h)->
-      eval' (Ev (field, env, h, K.DeleteField2 (p, obj_val, env, k)))
-    | Co (K.DeleteField2 (p, obj_val, env, k), field_val, h) ->
-      (match obj_val, field_val with
-      | V.ObjLoc loc, V.String s ->
-        (match SO.get_obj store loc with
-        | (attrs, props) ->
-          (try match S.IdMap.find s props with
-          | V.Data (_, _, true)
-          | V.Accessor (_, _, true) ->
-            let store' = SO.set_obj store loc (attrs, S.IdMap.remove s props) in
-            eval (Co (k, V.True, h), store')
-          | _ -> eval' (Exn (E.Throw ([], V.String "unconfigurable-delete"), env, h))
-           with Not_found -> eval' (Co (k, V.False, h))))
-      | _ -> failwith ("[interp] Delete field didn't get an object and a string at "
-                       ^ S.Pos.string_of_pos p))
+      ev_ak (K.DeleteField (p, field, env, k)) obj env h
     (* SYN.SetField (pos, obj, field, next, body)
      * Sets obj's field to next by executing body. *)
     | Ev (SYN.SetField (p, obj, field, next, body), env, h, k) ->
-      eval' (Ev (obj, env, h, K.SetField (p, field, next, body, env, k)))
-    | Co (K.SetField  (p, field, next, body, env, k), obj_val, h) ->
-      eval' (Ev (field, env, h, K.SetField2 (p, next, body, obj_val, env, k)))
-    | Co (K.SetField2 (p, next, body, obj_val, env, k), field_val, h) ->
-      eval' (Ev (next, env, h, K.SetField3 (p, body, obj_val, field_val, env, k)))
-    | Co (K.SetField3 (p, body, obj_val, field_val, env, k), valu, h) ->
-      eval' (Ev (body, env, h, K.SetField4 (p, obj_val, field_val, valu, env, k)))
-    | Co (K.SetField4 (p, obj_val, field_val, valu, env, k), body_val, h) ->
-      (match (obj_val, field_val) with
-      | (V.ObjLoc loc, V.String s) -> (match SO.get_obj store loc with
-        | ({V.extensible=extensible;} as attrs, props) ->
-          let prop = SO.get_prop p store obj_val s in
-          let unwritable = (E.Throw ([], V.String "unwritable-field")) in
-          (match prop with
-          | Some (V.Data ({ V.writable = true; }, enum, config)) ->
-            let (enum, config) =
-              if (S.IdMap.mem s props)
-              then (enum, config)
-              else (true, true) in
-            let prop = V.Data ({ V.value = valu; V.writable = true }, enum, config) in
-            let props = S.IdMap.add s prop props in
-            let store' = SO.set_obj store loc (attrs, props) in
-            eval (Co (k, valu, h), store')
-          | Some (V.Data _) -> eval' (Exn (unwritable, env, h))
-          | Some (V.Accessor ({ V.setter = V.Undefined; }, _, _)) ->
-            eval' (Exn (unwritable, env, h))
-          | Some (V.Accessor ({ V.setter = setterv; }, _, _)) ->
-            eval' (Ap (p, setterv, [obj_val; body_val], h, K.SetField5 (env, k)))
-          | None ->
-            if extensible
-            then
-              let prop = V.Data ({ V.value = valu; V.writable = true; }, true, true) in
-              let props = S.IdMap.add s prop props in
-              let store' = SO.set_obj store loc (attrs, props) in
-              eval (Co (k, valu, h), store')
-            else eval' (Co (k, V.Undefined, h))))
-      | _ -> failwith ("[interp] Update field didn't get an object and a string"
-                       ^ S.Pos.string_of_pos p))
-    | Co (K.SetField5 (env, k), acc_val, h) -> eval' (Co (k, acc_val, h))
+      ev_ak (K.SetField (p, field, next, body, env, k)) obj env h
     (* SYN.Op1 (pos, name, arg)
      * Evaluates a unary operation name on arg. *)
     | Ev (SYN.Op1 (_, name, arg), env, h, k) ->
-      eval' (Ev (arg, env, h, K.OpOne (name, env, k)))
-    | Co (K.OpOne (name, env, k), arg_val, h) ->
-      eval' (Co (k, D.op1 store name arg_val, h))
+      ev_ak (K.OpOne (name, env, k)) arg env h
     (* SYN.Op2 (pos, name, arg1, arg2)
      * Evaluates a binary operation name on arg1 and arg2. *)
     | Ev (SYN.Op2 (_, name, arg1, arg2), env, h, k) ->
-      eval' (Ev (arg1, env, h, K.OpTwo (name, arg2, env, k)))
-    | Co (K.OpTwo (name, arg2, env, k), arg1_val, h) ->
-      eval' (Ev (arg2, env, h, K.OpTwo2 (name, arg1_val, env, k)))
-    | Co (K.OpTwo2 (name, arg1_val, env, k), arg2_val, h) ->
-      eval' (Co (k, D.op2 store name arg1_val arg2_val, h))
+      ev_ak (K.OpTwo (name, arg2, env, k)) arg1 env h
     (* SYN.If (pos, pred, then, else)
      * Evaluates then if pred, else otherwise. *)
     | Ev (SYN.If (_, pred, than, elze), env, h, k) ->
-      eval' (Ev (pred, env, h, K.If (env, than, elze, k)))
-    | Co (K.If (env, than, elze, k), pred_val, h) ->
-      if (pred_val = V.True)
-      then eval' (Ev (than, env, h, k))
-      else eval' (Ev (elze, env, h, k))
+      ev_ak (K.If (env, than, elze, k)) pred env h
     (* SYN.App (pos, func, args)
      * Applies the body of func with the given args. *)
     | Ev (SYN.App (pos, func, args), env, h, k) ->
-      eval' (Ev (func, env, h, K.App (pos, env, args, k)))
-      (* special case for no arg apps *)
-    | Co (K.App (pos, env, [], k), func, h) ->
-      eval' (Ap (pos, func, [], h, K.App3 (env, k)))
-    | Co (K.App (pos, env, expr::exprs, k), func, h) ->
-      eval' (Ev (expr, env, h, K.App2 (pos, func, env, [] , exprs, k)))
-    | Co (K.App2 (pos, func, env, vs, expr::exprs, k), arg_val, h) ->
-      eval' (Ev (expr, env, h, K.App2 (pos, func, env, arg_val::vs, exprs, k)))
-    | Co (K.App2 (pos, func, env, vs, [], k), arg_val, h) ->
-      eval' (Ap (pos, func, List.rev (arg_val::vs), h, K.App3 (env, k)))
-    | Co (K.App3 (env, k), body_val, h) -> eval' (Co (k, body_val, h))
+      ev_ak (K.App (pos, env, args, k)) func env h
     (* SYN.Seq (pos, left, right)
      * Evaluates left then right, continuing with right's value. *)
     | Ev (SYN.Seq (_, left, right), env, h, k) ->
-      eval' (Ev (left, env, h, K.Seq (right, env, k)))
-    | Co (K.Seq (right, env, k), _, h) -> eval' (Ev (right, env, h, k))
+      ev_ak (K.Seq (right, env, k)) left env h
     (* SYN.Let (pos, name, expr, body)
      * Evaluates body with name bound to expr. *)
     | Ev (SYN.Let (_, name, expr, body), env, h, k) ->
-      eval' (Ev (expr, env, h, K.Let (name, body, env, k)))
-    | Co (K.Let (name, body, env, k), v, h) ->
-      let (new_loc, store') = SO.add_val store v in
-      eval (Ev (body, S.IdMap.add name new_loc env, h, K.Let2 (env, k)), store')
-    | Co (K.Let2 (env, k), v, h) -> eval' (Co (k, v, h))
+      ev_ak (K.Let (name, body, env, k)) expr env h
     (* SYN.Rec (pos, name, expr, body)
      * Evaluates body with name bound to expr, which may contain
      * recursive references to name. *)
     | Ev (SYN.Rec (_, name, expr, body), env, h, k) ->
-      let (new_loc, store') = SO.add_val store V.Undefined in
-      let env' = S.IdMap.add name new_loc env in
-      eval (Ev (expr, env', h, K.Rec (new_loc, body, env', k)), store')
-    | Co (K.Rec (new_loc, body, env, k), v, h) ->
-      eval (Ev (body, env, h, k), SO.set_val store new_loc v)
+      let (new_loc, store') = SO.add_val V.Undefined store in
+      let env' = SO.add_loc name new_loc env in
+      ev_ak' (K.Rec (new_loc, body, env', k)) expr env' h store'
     (* SYN.Label (pos, name, expr)
      * Evaluates expr, catching any Breaks with the matching name. *)
     | Ev (SYN.Label (_, name, exp), env, h, k) ->
-      eval' (Ev (exp, env, K.Lab (name, env, k, h), K.Mt))
-    | Co (K.Label (_, _, k), valu, h) -> eval' (Co (k, valu, h))
+      ev_ah (K.Lab (name, env, k, h)) exp env
     (* SYN.Break (pos, label, expr)
      * Breaks to label with expr as the value passed back. *)
     | Ev (SYN.Break (_, label, expr), env, h, k) ->
-      eval' (Ev (expr, env, h, K.Break (label, env, k)))
-    | Co (K.Break (label, env, k), v, h) ->
-      eval' (Exn (E.Break ([], label, v), env, h))
-    | Exn ((E.Break (t, label, v) as brk), env, K.Lab (name, env', k, h')) ->
-      if name = label then eval' (Co (k, v, h'))
-      else eval' (Exn (brk, env, h'))
+      ev_ak (K.Break (label, env, k)) expr env h
     (* SYN.TryCatch (pos, body, catch)
      * Evaluates body, evaluating catch with the thrown value as an
      * argument if a Throw is lobbed up. *)
     | Ev (SYN.TryCatch (p, body, catch), env, h, k) ->
-      eval' (Ev (body, env, K.Cat (p, catch, env, k, h), K.Mt))
-    | Exn (E.Throw (_, throw_val), _, K.Cat (p, catch, env, k, h)) ->
-      eval' (Ev (catch, env, h, K.Catch (p, throw_val, env, k)))
-    | Co (K.Catch (p, throw_val, env, k), catch_val, h) ->
-      eval' (Ap (p, catch_val, [throw_val], h, K.Catch2 (env, k)))
-    | Co (K.Catch2 (env, k), catch_body_val, h) -> eval' (Co (k, catch_body_val, h))
+      ev_ah (K.Cat (p, catch, env, k, h)) body env
     (* SYN.TryFinally (pos, body, fin)
      * Evaluates body then fin; if an exception is thrown from body
      * fin will be executed and the exn's store is updated. *)
     | Ev (SYN.TryFinally (_, body, fin), env, h, k) ->
-      eval' (Ev (body, env, K.Fin (fin, env, k, h), K.Mt))
-    | Exn (ex, _, K.Fin (fin, env, k, h)) ->
-      eval' (Ev (fin, env, h, K.Finally (ex, env, k)))
-    | Co (K.Finally (ex, env, k), _, h) ->
-      (match ex with
-      | E.Throw (t, v) -> eval' (Exn (E.Throw (t, v), env, h))
-      | E.Break (t, l, v) -> eval' (Exn (E.Break (t, l, v), env, h))
-      | _ -> failwith "try finally caught something other than a throw or break.")
-    | Co (K.Finally2 (valu), _, h) -> eval' (Co (K.Mt, valu, h))
+      ev_ah (K.Fin (fin, env, k, h)) body env
     (* SYN.Throw (pos, expr)
      * Lobs expr up through the future konts. *)
     | Ev (SYN.Throw (_, expr), env, h, k) ->
-      eval' (Ev (expr, env, h, K.Throw (env, k)))
-    | Co (K.Throw (env, k), valu, h) ->
-      eval' (Exn (E.Throw ([], valu), env, h))
+      ev_ak (K.Throw (env, k)) expr env h
     (* SYN.Eval (pos, str_expr, bindings)
      * Evaluates str_expr with the fields defined in the object
      * bindings added to the environment. *)
     | Ev (SYN.Eval (pos, str, bindings), env, h, k) ->
-      eval' (Ev (str, env, h, K.Eval (pos, bindings, env, k)))
-    | Co (K.Eval (pos, bindings, env, k), str_val, h) ->
-      eval' (Ev (bindings, env, h, K.Eval2 (pos, str_val, env, k)))
-    | Co (K.Eval2 (pos, str_val, env, k), bind_val, h) ->
-      (match str_val, bind_val with
-      | V.String s, V.ObjLoc o ->
-        let expr = desugar s in
-        let env', store' = SO.envstore_of_obj pos (SO.get_obj store o) store in
-        eval (Ev (expr, env', h, K.Eval3 (env, k)), store')
-      | V.String _, _ -> interp_error pos "Non-object given to eval() for env"
-      | v, _ -> eval' (Co (k, v, h)))
-    | Co (K.Eval3 (env, k), valu, h) -> eval' (Co (k, valu, h))
+      ev_ak (K.Eval (pos, bindings, env, k)) str env h
     (* SYN.Hint (pos, str, expr)
      * Evaluates expr, continuing with a Snapshot if str is
      * "___takeS5Snapshot", or just continues with expr's val. *)
     | Ev (SYN.Hint (_, "___takeS5Snapshot", expr), env, h, k) ->
-      eval' (Ev (expr, env, h, K.Hint (env, k)))
+      ev_ak (K.Hint (env, k)) expr env h
     | Ev (SYN.Hint (_, _, expr), env, h, k) -> eval' (Ev (expr, env, h, k))
-    | Co (K.Hint (env, k), valu, h) ->
-      eval' (Exn (E.Snapshot (valu, env, store), env, h))
-    (* exception cases *)
-    | Exn (ex, env, K.MtH) -> raise ex
-    | Exn ((E.Break (exprs, l, v) as brk), env, h) ->
-      eval' (Exn (brk, env, K.shed h))
-    | Exn ((E.Throw (_, _) as thr), env, h) -> eval' (Exn (thr, env, K.shed h))
-    | Exn (ex, env, h) -> eval' (Exn (ex, env, K.shed h))
-    | _ -> begin
-      print_string (string_of_state state) ;
-      failwith "Encountered an unmatched eval_ceshk case."
-        end
-  end
+    | Exn _ -> (* exception cases match on handle *)
+      (match SO.get_handl (hloc_of_state state) store, state with
+      | K.Lab (name, _, k, h), Exn ((E.Break (t, label, v) as brk), env, _) ->
+        if name = label then eval' (Co (k, v, h))
+        else eval' (Exn (brk, env, h))
+      | K.Cat (p, catch, env, k, h), Exn (E.Throw (_, throw_val), _, _) ->
+        ev_ak (K.Catch (p, throw_val, env, k)) catch env h
+      | K.Fin (fin, env, k, h), Exn (ex, _, _) ->
+        ev_ak (K.Finally (ex, env, k)) fin env h
+      | K.MtH, Exn (ex, env, _) -> raise ex
+      | h, Exn ((E.Break (_, _, _) as brk), env, _) ->
+        eval' (Exn (brk, env, hloc_of_handl h))
+      | h, Exn ((E.Throw _ as thr), env, _) ->
+        eval' (Exn (thr, env, hloc_of_handl h))
+      | h, Exn (ex, env, _) -> eval' (Exn (ex, env, hloc_of_handl h))
+      | _ -> failwith "Encountered an unmatched machine state.")
+    | _ -> (* need to match on kont and/or handl *)
+      let kont = SO.get_kont (kloc_of_state state) store in
+      (match state, kont with
+      | Co (_, v, h), K.SetBang (loc, k) ->
+        let store' = SO.set_val loc v store in
+        eval (Co (k, v, h)) store'
+      | CoA (_, valu, h), K.Object ([], _, k) -> (* empty props case *)
+        let obj_loc, store' = SO.add_obj (valu, S.IdMap.empty) store in
+        eval (Co (k, V.ObjLoc obj_loc, h)) store'
+      | CoA (_, attrsv, h), K.Object (p::ps, env, k) ->
+        evp_ak (K.Object2 (attrsv, ps, [], env, k)) p env h
+      | CoP (_, pv, h), K.Object2 (attrsv, p::ps, pvs, env, k) ->
+        evp_ak (K.Object2 (attrsv, ps, pv::pvs, env, k)) p env h
+      | CoP (_, pv, h), K.Object2 (attrsv, [], pvs, env, k) ->
+        let add_prop acc (name, propv) = S.IdMap.add name propv acc in
+        let propsv = List.fold_left add_prop S.IdMap.empty (pv::pvs) in
+        let obj_loc, store' = SO.add_obj (attrsv, propsv) store in
+        eval (Co (k, V.ObjLoc obj_loc, h)) store'
+      | Co (_, valu, h), K.DataProp (name, w, enum, config, k) ->
+        eval' (CoP (k, (name, V.Data ({ V.value=valu; V.writable=w; }, enum, config)), h))
+      | Co (_, getter_val, h), K.AccProp (name, setter, enum, config, env, k) ->
+        ev_ak (K.AccProp2 (name, getter_val, enum, config, env, k)) setter env h
+      | Co (_, sv, h), K.AccProp2 (name, gv, enum, config, env, k) ->
+        eval' (CoP (k, (name, V.Accessor ({ V.getter=gv; V.setter=sv; }, enum, config)), h))
+      | Co (_, valu, h), K.Attrs (name, (name', exp)::pairs, valus, kls, ext, env, k) ->
+        ev_ak (K.Attrs (name', pairs, (name, valu)::valus, kls, ext, env, k)) exp env h
+      | Co (_, valu, h), K.Attrs (name, [], valus, kls, ext, env, k) ->
+        let valus = (name, valu)::valus in
+        let rec opt_get name xs = match xs with
+          | [] -> None
+          | (name', valu)::xs' -> if name = name' then Some valu else opt_get name xs' in
+        let rec und_get name xs = match xs with
+          | [] -> V.Undefined
+          | (name', valu)::xs' -> if name = name' then valu else und_get name xs' in
+        let attrsv = { V.code=(opt_get "code" valus);
+                       V.proto=(und_get "proto" valus);
+                       V.primval=(opt_get "prim" valus);
+                       V.klass=kls;
+                       V.extensible=ext; } in
+        eval' (CoA (k, attrsv, h))
+      | Co (_, obj_val, h), K.GetAttr (attr, field, env, k) ->
+        ev_ak (K.GetAttr2 (attr, obj_val, env, k)) field env h
+      | Co (_, field_val, h), K.GetAttr2 (attr, obj_val, env, k) ->
+        eval' (Co (k, SO.get_attr attr obj_val field_val store, h))
+      | Co (_, obj_val, h), K.SetAttr (pattr, field, next, env, k) ->
+        ev_ak (K.SetAttr2 (pattr, next, obj_val, env, k)) field env h
+      | Co (_, field_val, h), K.SetAttr2 (pattr, next, obj_val, env, k) ->
+        ev_ak (K.SetAttr3 (pattr, obj_val, field_val, env, k)) next env h
+      | Co (_, valu, h), K.SetAttr3 (pattr, obj_val, field_val, env, k) ->
+        let b, store' = SO.set_attr pattr obj_val field_val valu store in
+        eval (Co (k, D.bool b, h)) store'
+      | Co (_, obj_val, h), K.GetObjAttr (oattr, env, k) ->
+        (match obj_val with
+        | V.ObjLoc obj_loc -> (match SO.get_obj obj_loc store with
+          | (attrs, _) -> eval' (Co (k, SO.get_obj_attr attrs oattr, h)))
+        | _ -> failwith "[interp] GetObjAttr got a non-object.")
+      | Co (_, obj_val, h), K.SetObjAttr (oattr, next, env, k) ->
+        ev_ak (K.SetObjAttr2 (oattr, obj_val, env, k)) next env h
+      | Co (_, valu, h), K.SetObjAttr2 (oattr, obj_val, env, k) ->
+        (match obj_val with
+        | V.ObjLoc loc -> (match SO.get_obj loc store with
+          | (attrs, props) ->
+            let attrs' = match oattr, valu with
+              | SYN.Proto, V.ObjLoc _
+              | SYN.Proto, V.Null -> { attrs with V.proto=valu }
+              | SYN.Extensible, V.True  -> { attrs with V.extensible=true }
+              | SYN.Extensible, V.False -> { attrs with V.extensible=false }
+              | SYN.Primval, v -> { attrs with V.primval=Some v }
+              | _ -> failwith "set object attr failed" in
+            eval (Co (k, valu, h)) (SO.set_obj loc (attrs', props) store))
+        | _ -> failwith "[interp] SetObjAttr got a non-object")
+      | Co (_, obj_val, h), K.GetField (p, field, body, env, k) ->
+        ev_ak (K.GetField2 (p, body, obj_val, env, k)) field env h
+      | Co (_, field_val, h), K.GetField2 (p, body, obj_val, env, k) ->
+        ev_ak (K.GetField3 (p, obj_val, field_val, env, k)) body env h
+      | Co (_, body_val, h), K.GetField3 (p, obj_val, field_val, env, k) ->
+        (match (obj_val, field_val) with
+        | (V.ObjLoc _, V.String s) -> (match SO.get_prop p store obj_val s with
+          | Some (V.Data ({V.value=v;}, _, _)) -> eval' (Co (k, v, h))
+          | Some (V.Accessor ({V.getter=g;},_,_)) ->
+            ap_ak (K.GetField4 (env, k)) p g [obj_val; body_val] h
+          | None -> eval' (Co (k, V.Undefined, h)))
+        | _ -> failwith ("[interp] Get field didn't get an object and a string at "
+                         ^ S.Pos.string_of_pos p ^ "."))
+      | Co (_, acc_val, h), K.GetField4 (env, k) ->
+        eval' (Co (k, acc_val, h))
+      | Co (_, obj_val, h), K.OwnFieldNames k ->
+        (match obj_val with
+        | V.ObjLoc loc -> (match SO.get_obj loc store with
+          | (_, props) ->
+            let add_name n x m =
+              S.IdMap.add
+                (string_of_int x)
+                (V.Data ({ V.value = V.String n; writable = false; }, false, false))
+                m in
+            let names = S.IdMap.fold (fun k v l -> (k :: l)) props [] in
+            let props = List.fold_right2 add_name names (S.iota (List.length names)) S.IdMap.empty in
+            let d = float_of_int (List.length names) in
+            let final_props =
+              S.IdMap.add
+                "length"
+                (V.Data ({ V.value = V.Num d; writable = false; }, false, false))
+                props in
+            let (new_obj, store') = SO.add_obj (V.d_attrsv, final_props) store in
+            eval (Co (k, V.ObjLoc new_obj, h)) store')
+        | _ -> failwith "[interp] OwnFieldNames didn't get an object")
 
-let inj exp env store = (Ev (exp, env, K.MtH, K.Mt), store)
+      | Co (_, obj_val, h), K.DeleteField (p, field, env, k) ->
+        ev_ak (K.DeleteField2 (p, obj_val, env, k)) field env h
+      | Co (_, field_val, h), K.DeleteField2 (p, obj_val, env, k) ->
+        (match obj_val, field_val with
+        | V.ObjLoc loc, V.String s ->
+          (match SO.get_obj loc store with
+          | (attrs, props) ->
+            (try match S.IdMap.find s props with
+            | V.Data (_, _, true)
+            | V.Accessor (_, _, true) ->
+              let store' = SO.set_obj loc (attrs, S.IdMap.remove s props) store in
+              eval (Co (k, V.True, h)) store'
+            | _ -> eval' (Exn (E.Throw ([], V.String "unconfigurable-delete"), env, h))
+             with Not_found -> eval' (Co (k, V.False, h))))
+        | _ -> failwith ("[interp] Delete field didn't get an object and a string at "
+                         ^ S.Pos.string_of_pos p))
+      | Co (_, obj_val, h), K.SetField (p, field, next, body, env, k) ->
+        ev_ak (K.SetField2 (p, next, body, obj_val, env, k)) field env h
+      | Co (_, field_val, h), K.SetField2 (p, next, body, obj_val, env, k) ->
+        ev_ak (K.SetField3 (p, body, obj_val, field_val, env, k)) next env h
+      | Co (_, valu, h), K.SetField3 (p, body, obj_val, field_val, env, k) ->
+        ev_ak (K.SetField4 (p, obj_val, field_val, valu, env, k)) body env h
+      | Co (_, body_val, h), K.SetField4 (p, obj_val, field_val, valu, env, k) ->
+        (match (obj_val, field_val) with
+        | (V.ObjLoc loc, V.String s) -> (match SO.get_obj loc store with
+          | ({V.extensible=extensible;} as attrs, props) ->
+            let prop = SO.get_prop p store obj_val s in
+            let unwritable = (E.Throw ([], V.String "unwritable-field")) in
+            (match prop with
+            | Some (V.Data ({ V.writable = true; }, enum, config)) ->
+              let (enum, config) =
+                if (S.IdMap.mem s props)
+                then (enum, config)
+                else (true, true) in
+              let prop = V.Data ({ V.value = valu; V.writable = true }, enum, config) in
+              let props = S.IdMap.add s prop props in
+              let store' = SO.set_obj loc (attrs, props) store in
+              eval (Co (k, valu, h)) store'
+            | Some (V.Data _) ->
+              eval' (Exn (unwritable, env, h))
+            | Some (V.Accessor ({ V.setter = V.Undefined; }, _, _)) ->
+              eval' (Exn (unwritable, env, h))
+            | Some (V.Accessor ({ V.setter = setterv; }, _, _)) ->
+              ap_ak (K.SetField5 (env, k)) p setterv [obj_val; body_val] h
+            | None ->
+              if extensible
+              then
+                let prop = V.Data ({ V.value = valu; V.writable = true; }, true, true) in
+                let props = S.IdMap.add s prop props in
+                let store' = SO.set_obj loc (attrs, props) store in
+                eval (Co (k, valu, h)) store'
+              else eval' (Co (k, V.Undefined, h))))
+        | _ -> failwith ("[interp] Update field didn't get an object and a string"
+                         ^ S.Pos.string_of_pos p))
+      | Co (_, acc_val, h), K.SetField5 (env, k) ->
+        eval' (Co (k, acc_val, h))
+      | Co (_, arg_val, h), K.OpOne (name, env, k) ->
+        eval' (Co (k, D.op1 store name arg_val, h))
+      | Co (_, arg1_val, h), K.OpTwo (name, arg2, env, k) ->
+        ev_ak (K.OpTwo2 (name, arg1_val, env, k)) arg2 env h
+      | Co (_, arg2_val, h), K.OpTwo2 (name, arg1_val, env, k) ->
+        eval' (Co (k, D.op2 store name arg1_val arg2_val, h))
+      | Co (_, pred_val, h), K.If (env, than, elze, k) ->
+        if (pred_val = V.True)
+        then eval' (Ev (than, env, h, k))
+        else eval' (Ev (elze, env, h, k))
+    (* special case for no arg apps *)
+      | Co (_, func, h), K.App (pos, env, [], k) ->
+        ap_ak (K.App3 (env, k)) pos func [] h
+      | Co (_, func, h), K.App (pos, env, expr::exprs, k) ->
+        ev_ak (K.App2 (pos, func, env, [] , exprs, k)) expr env h
+      | Co (_, arg_val, h), K.App2 (pos, func, env, vs, expr::exprs, k) ->
+        ev_ak (K.App2 (pos, func, env, arg_val::vs, exprs, k)) expr env h
+      | Co (_, arg_val, h), K.App2 (pos, func, env, vs, [], k) ->
+        ap_ak (K.App3 (env, k)) pos func (List.rev (arg_val::vs)) h
+      | Co (_, body_val, h), K.App3 (env, k) ->
+        eval' (Co (k, body_val, h))
+      | Co (_, _, h), K.Seq (right, env, k) ->
+        eval' (Ev (right, env, h, k))
+      | Co (_, v, h), K.Let (name, body, env, k) ->
+        let (new_loc, store') = SO.add_val v store in
+        ev_ak' (K.Let2 (env, k)) body (S.IdMap.add name new_loc env) h store'
+      | Co (_, v, h), K.Let2 (env, k) ->
+        eval' (Co (k, v, h))
+      | Co (_, v, h), K.Rec (new_loc, body, env, k) ->
+        eval (Ev (body, env, h, k)) (SO.set_val new_loc v store)
+      | Co (_, valu, h), K.Label (_, _, k) ->
+        eval' (Co (k, valu, h))
+      | Co (_, v, h), K.Break (label, env, k) ->
+        eval' (Exn (E.Break ([], label, v), env, h))
+      | Co (_, catch_val, h), K.Catch (p, throw_val, env, k) ->
+        ap_ak (K.Catch2 (env, k)) p catch_val [throw_val] h
+      | Co (_, catch_body_val, h), K.Catch2 (env, k) ->
+        eval' (Co (k, catch_body_val, h))
+      | Co (_, _, h), K.Finally (ex, env, k) ->
+        (match ex with
+        | E.Throw (t, v) ->
+          eval' (Exn (E.Throw (t, v), env, h))
+        | E.Break (t, l, v) ->
+          eval' (Exn (E.Break (t, l, v), env, h))
+        | _ -> failwith "try finally caught something other than a throw or break.")
+      | Co (_, _, _), K.Finally2 (valu) ->
+        eval' (Ans (valu))
+      | Co (_, valu, h), K.Throw (env, k) ->
+        eval' (Exn (E.Throw ([], valu), env, h))
+      | Co (_, str_val, h), K.Eval (pos, bindings, env, k) ->
+        ev_ak (K.Eval2 (pos, str_val, env, k)) bindings env h
+      | Co (_, bind_val, h), K.Eval2 (pos, str_val, env, k) ->
+        (match str_val, bind_val with
+        | V.String s, V.ObjLoc o ->
+          let expr = desugar s in
+          let env', store' = SO.envstore_of_obj pos (SO.get_obj o store) store in
+          ev_ak' (K.Eval3 (env, k)) expr env' h store'
+        | V.String _, _ -> interp_error pos "Non-object given to eval() for env"
+        | v, _ -> eval' (Co (k, v, h)))
+      | Co (_, valu, h), K.Eval3 (env, k) ->
+        eval' (Co (k, valu, h))
+      | Co (_, valu, h), K.Hint (env, k) ->
+        eval' (Exn (E.Snapshot (valu, env, store), env, h))
+      | _, _ -> (match state, kont, SO.get_handl (hloc_of_state state) store with
+      (* at empty with no handlers... victory! *)
+        | Co (_, valu, _), K.Mt, K.MtH -> eval' (Ans valu)
+      (* jump back through handlers, except finally! *)
+        | Co (_, valu, _), K.Mt, K.Lab (name, env, k, h) ->
+          eval' (Co (k, valu, h))
+        | Co (_, valu, _), K.Mt, K.Cat (_, _, _, k, h) ->
+          eval' (Co (k, valu, h))
+        | Co (_, valu, _), K.Mt, K.Fin (exp, env, k, h) ->
+          ev_ak (K.Finally2 (valu)) exp env h
+        | _ -> failwith "Encountered an unmatched machine state."))
+  end
+        
+let inj exp env store =
+  let hloc, store' = SO.add_handl K.MtH store in
+  let kloc, store'' = SO.add_kont K.Mt store' in
+  Ev (exp, env, hloc, kloc), store''
 
 let continue_eval
-            (exp : SYN.exp)
-        (desugar : (string -> SYN.exp))
-            (env : S.loc S.IdMap.t)
-          (store : IS.store)
+    (exp : SYN.exp)
+    (desugar : (string -> SYN.exp))
+    (env : loc S.IdMap.t)
+    (store : IS.store)
     : A.answer =
   try
     Sys.catch_break true;
-    eval_ceshk desugar (inj exp env store)
+    let state, store' = inj exp env store in
+    machine_eval desugar state store'
   with
   | E.Snapshot (v, env, store) -> A.MAnswer (v, Some env, store)
   | E.Throw (t, v) ->
     let err_msg =
       match v with
-      | V.ObjLoc loc -> (match SO.get_obj store loc with
+      | V.ObjLoc loc -> (match SO.get_obj loc store with
         | (_, props) -> (try match S.IdMap.find "%js-exn" props with
           | V.Data ({V.value=jserr}, _, _) -> PV.string_of_value jserr store
           | _ -> PV.string_of_value v store

@@ -12,21 +12,21 @@ let unbool b = match b with
   | V.False -> false
   | _ -> failwith "tried to unbool a non-bool"
 
-let add_loc m k a = S.IdMap.add k a m
-let get_loc m k = S.IdMap.find k m
+let add_loc = S.IdMap.add
+let get_loc = S.IdMap.find
 let add v (vs, next) = next, (S.LocMap.add next v vs, next+1)
-let add_obj (os, vs, hs, ks) new_obj =
+let add_obj new_obj (os, vs, hs, ks) =
   let loc, os' = add new_obj os in loc, (os', vs, hs, ks)
-let add_val (os, vs, hs, ks) new_val =
+let add_val new_val (os, vs, hs, ks) =
   let loc, vs' = add new_val vs in loc, (os, vs', hs, ks)
-let add_handl (os, vs, hs, ks) new_handl =
+let add_handl new_handl (os, vs, hs, ks) =
   let loc, hs' = add new_handl hs in loc, (os, vs, hs', ks)
-let add_kont (os, vs, hs, ks) new_kont =
+let add_kont new_kont (os, vs, hs, ks) =
   let loc, ks' = add new_kont ks in loc, (os, vs, hs, ks')
 let get k (m, _) = S.LocMap.find k m
-let get_obj (os, _, _, _) k = get k os
-let rec get_attr store attr obj field = match obj, field with
-  | V.ObjLoc loc, V.String s -> (match get_obj store loc with
+let get_obj k (os, _, _, _) = get k os
+let rec get_attr attr obj field store = match obj, field with
+  | V.ObjLoc loc, V.String s -> (match get_obj loc store with
     | attrs, props ->
       if (not (S.IdMap.mem s props)) then V.Undefined
       else (match (S.IdMap.find s props), attr with
@@ -51,18 +51,18 @@ let get_obj_attr attrs attr = match attrs, attr with
   | { V.klass=klass }, SYN.Klass -> V.String klass
 let rec get_prop p store obj field = match obj with
   | V.Null -> None
-  | V.ObjLoc loc -> (match get_obj store loc with
+  | V.ObjLoc loc -> (match get_obj loc store with
     | ({ V.proto = pvalue; }, props) ->
       try Some (S.IdMap.find field props)
       with Not_found -> get_prop p store pvalue field)
   | _ -> failwith "get_prop on a non-object."
-let get_val (_, vs, _, _) k = get k vs
-let get_handl (_, _, hs, _) k = get k hs
-let get_kont (_, _, _, ks) k = get k ks
+let get_val k (_, vs, _, _) = get k vs
+let get_handl k (_, _, hs, _) = get k hs
+let get_kont k (_, _, _, ks) = get k ks
 let set k v (vs, next) = (S.LocMap.add k v vs, next)
-let set_obj (os, vs, hs, ks) k v = (set k v os, vs, hs, ks)
-let rec set_attr store attr obj field newval = match obj, field with
-  | V.ObjLoc loc, V.String f_str -> (match get_obj store loc with
+let set_obj k v (os, vs, hs, ks) = (set k v os, vs, hs, ks)
+let rec set_attr attr obj field newval store = match obj, field with
+  | V.ObjLoc loc, V.String f_str -> (match get_obj loc store with
     | ({ V.extensible = ext; } as attrsv, props) ->
       if not (S.IdMap.mem f_str props) then
         if ext then 
@@ -79,7 +79,7 @@ let rec set_attr store attr obj field newval = match obj, field with
               V.Data ({ V.value = V.Undefined; V.writable = false }, unbool newval, true) 
             | SYN.Config ->
               V.Data ({ V.value = V.Undefined; V.writable = false }, true, unbool newval) in
-          let store = set_obj store loc (attrsv, S.IdMap.add f_str newprop props) in
+          let store = set_obj loc (attrsv, S.IdMap.add f_str newprop props) store in
           true, store
         else
           failwith "[interp] Extending inextensible object."
@@ -123,20 +123,20 @@ let rec set_attr store attr obj field newval = match obj, field with
             V.Accessor (a, enum, false)
           | _ -> raise (E.PrimErr ([], V.String "[interp] bad property set"))
         in
-        let store = set_obj store loc (attrsv, S.IdMap.add f_str newprop props) in
+        let store = set_obj loc (attrsv, S.IdMap.add f_str newprop props) store in
         true, store)
   | _ -> raise (E.PrimErr ([], V.String ("[interp] set-attr didn't get
                              ^ an object and a string")))
-let set_val (os, vs, hs, ks) k v = (os, set k v vs, hs, ks)
-let set_handl (os, vs, hs, ks) k v = (os, vs, set k v hs, ks)
-let set_kont (os, vs, hs, ks) k v = (os, vs, hs, set k v ks)
-let lookup x e s = get (get_loc e x) s
+let set_val k v (os, vs, hs, ks) = (os, set k v vs, hs, ks)
+let set_handl k v (os, vs, hs, ks) = (os, vs, set k v hs, ks)
+let set_kont k v (os, vs, hs, ks) = (os, vs, hs, set k v ks)
+let lookup x e s = get (get_loc x e) s
 let look_obj x e (os, _, _, _) = lookup x e os
 let look_val x e (_, vs, _, _) = lookup x e vs
 let envstore_of_obj p (_, props) store =
   S.IdMap.fold (fun id prop (env, store) -> match prop with
   | V.Data ({V.value=v}, _, _) ->
-    let new_loc, store = add_val store v in
+    let new_loc, store = add_val v store in
     let env = S.IdMap.add id new_loc env in
     env, store
   | _ -> failwith "Non-data value in env_of_obj")
