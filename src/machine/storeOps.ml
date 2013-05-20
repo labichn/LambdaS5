@@ -14,7 +14,7 @@ let unbool b = match b with
 
 let add_loc = S.IdMap.add
 let get_loc = S.IdMap.find
-let add v (vs, next) = next, (S.LocMap.add next v vs, next+1)
+let add v (vs, next) = next, (S.LocMap.add next v vs, next+4)
 let add_obj new_obj (os, vs, hs, ks) =
   let loc, os' = add new_obj os in loc, (os', vs, hs, ks)
 let add_val new_val (os, vs, hs, ks) =
@@ -59,6 +59,11 @@ let rec get_prop p store obj field = match obj with
 let get_val k (_, vs, _, _) = get k vs
 let get_handl k (_, _, hs, _) = get k hs
 let get_kont k (_, _, _, ks) = get k ks
+let get_maybe f l s = try Some (f l s) with Not_found -> None
+let get_maybe_obj l s = get_maybe get_obj l s
+let get_maybe_val l s = get_maybe get_val l s
+let get_maybe_handl l s = get_maybe get_handl l s
+let get_maybe_kont l s = get_maybe get_kont l s
 let set k v (vs, next) = (S.LocMap.add k v vs, next)
 let set_obj k v (os, vs, hs, ks) = (set k v os, vs, hs, ks)
 let rec set_attr attr obj field newval store = match obj, field with
@@ -142,3 +147,8 @@ let envstore_of_obj p (_, props) store =
   | _ -> failwith "Non-data value in env_of_obj")
     props
     (S.IdMap.empty, store)
+let filter f ((os, a), (vs, b), (hs, c), (ks, d)) =
+  ((S.LocMap.filter f os, a),
+   (S.LocMap.filter f vs, b),
+   (S.LocMap.filter f hs, c),
+   (S.LocMap.filter f ks, d))

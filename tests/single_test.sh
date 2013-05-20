@@ -12,7 +12,7 @@ if [ $# -gt 1 ]; then
         VERB='t'
         echo 'Running test file: '$2
       fi
-      COMM='../obj/s5.d.byte -load init.heap -desugar '$2' -continue-'$TYPE'-eval'
+      COMM='../obj/s5.d.byte -load minit.heap -desugar '$2' -continue-'$TYPE'-eval'
       STR1=`$COMM`
       TEST=`echo $STR1 | grep "passed\|Passed"`
       if [ -n "$TEST" ]; then

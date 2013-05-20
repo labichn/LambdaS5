@@ -38,3 +38,23 @@ let pretty_value v = match v with
   | Null -> "null"
   | ObjLoc _ -> "object"
   | Closure _ -> "function"
+
+let locs_of_env env =
+  S.LocSet.from_list (List.map snd (S.IdMap.bindings env))
+
+let locs_of_value value = match value with
+  | ObjLoc loc -> S.LocSet.singleton loc
+  | Closure (env, _, _) -> locs_of_env env
+  | _ -> S.LocSet.empty
+
+let locs_of_obj (attrsv, prop_map) =
+  let list_of_option o = match o with Some x -> [x] | None -> [] in
+  let vals_of_attrsv {code=code; proto=proto; extensible=_;
+                     klass=_; primval=primval} =
+    [proto] @ (list_of_option code) @ (list_of_option primval) in
+  let vals_of_prop prop = match prop with
+    | Data ({value=value; writable=_}, _, _) -> [value]
+    | Accessor ({getter=getter; setter=setter}, _, _) -> [getter; setter] in
+  let vals_of_props prop_map =
+    List.concat (List.map vals_of_prop (List.map snd (S.IdMap.bindings prop_map))) in
+  S.LocSet.unions (List.map locs_of_value (vals_of_attrsv attrsv @ vals_of_props prop_map))

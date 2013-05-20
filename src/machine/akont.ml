@@ -65,6 +65,12 @@ type handl =
  | Lab of S.id * V.env * loc * loc
  | Fin of SYN.exp * V.env * loc * loc
 
+let hloc_of_handl handl = match handl with
+ | Cat (_, _, _, _, h) -> h
+ | Lab (_, _, _, h) -> h
+ | Fin (_, _, _, h) -> h
+ | MtH -> failwith "no hloc in mth, something's wrong!"
+
 let shed h = match h with
  | MtH -> failwith "cannot shed an empty handle"
  | Cat (_, _, _, _, h) -> h
