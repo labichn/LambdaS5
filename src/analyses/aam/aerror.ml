@@ -1,5 +1,3 @@
-open Clattice
-
 type exp = Ljs_syntax.exp
 type addr = Ashared.addr
 type value = addr

@@ -7,15 +7,6 @@ open Ljs_pretty_html
 open Reachability
 open Answer
 
-open Clattice
-open Ashared
-open Ahandle
-open Akont
-open Astore
-open Aerror
-open Adelta
-open Amachine
-
 type node =
   | Js of Js_syntax.program
   | Ejs of IdSet.t * Exprjs_syntax.expr
@@ -24,7 +15,7 @@ type node =
   | Env of (Ljs_syntax.exp -> Ljs_syntax.exp)
   | Answer of answer
 
-type nodeType = JsT | EjsT | LjsT | CpsT | EnvT | AnswerT | CAnswerT
+type nodeType = JsT | EjsT | LjsT | CpsT | EnvT | AnswerT
 
 let nodeType (node : node) : nodeType =
   match node with
@@ -34,7 +25,6 @@ let nodeType (node : node) : nodeType =
   | Cps _ -> CpsT
   | Env _ -> EnvT
   | Answer (Answer.Answer _) -> AnswerT
-  | Answer (Answer.CAnswer _) -> CAnswerT
 
 
 let showNodeType (nodeType : nodeType) : string =
@@ -45,7 +35,6 @@ let showNodeType (nodeType : nodeType) : string =
   | CpsT -> "S5-cps"
   | EnvT -> "S5-env"
   | AnswerT -> "Snapshot"
-  | CAnswerT -> "Machine Snapshot"
 
 
 module S5 = struct
@@ -201,7 +190,6 @@ module S5 = struct
         let root_set = LocSet.unions (map Ljs_gc.locs_of_env envs) in
         let store' = Ljs_gc.collect_garbage store root_set in
         push_answer (Answer.Answer (exps, v, envs, store'))
-    | Answer.CAnswer _ -> push_answer answer
 
 
   (* Composition Commands *)
@@ -227,21 +215,17 @@ module S5 = struct
     match peek_answer cmd with
     | Answer.Answer (_, value, _, _) ->
       print_endline (Ljs_values.pretty_value value)
-    | Answer.CAnswer (valu, _, _) ->
-      print_endline (Cvalue.string_of_value valu)
 
   let print_env cmd () =
     match peek_answer cmd with
     | Answer.Answer (_, _, env, _) ->
       print_endline (Ljs_pretty_value.string_of_env (last env))
-    | Answer.CAnswer _ -> print_endline "manswer env"
 
   let print_store cmd () =
     match peek_answer cmd with
     | Answer.Answer (_, _, _, store) ->
       Ljs_pretty_value.print_objects store;
       Ljs_pretty_value.print_values store
-    | Answer.CAnswer _ -> print_endline "manswer store"
 
   let print_store_as_html cmd () =
     let answer = peek_answer cmd in
@@ -262,7 +246,6 @@ module S5 = struct
     push_answer init_answer;
     push_answer ses_answer;
     match init_answer with
-    | Answer.CAnswer _ -> print_endline "manswer"
     | Answer.Answer (_, _, _, (obj_store, var_store)) ->
       let title = "SES Javascript Heap" in
       let stylefiles = ["style.css"] in
@@ -340,18 +323,6 @@ module S5 = struct
     FX.vert [FX.horz [FX.text "ANSWER <="; Ljs_cps_absdelta.ValueLattice.pretty ans];
              FX.horz [FX.text "ERROR  <="; Ljs_cps_absdelta.ValueLattice.pretty err]] Format.str_formatter;
     printf "%s\n" (Format.flush_str_formatter ())
-
-  let machine_eval cmd () =
-    let ljs = pop_ljs cmd in
-    push_answer (Cmachine.eval_expr ljs (desugar !json_path))
-
-  let continue_machine_eval cmd () =
-    let ljs = pop_ljs cmd in
-    match pop_answer cmd with
-    | Answer.CAnswer (_, Some env, store) ->
-      push_answer (Cmachine.continue_eval ljs (desugar !json_path) env store)
-    | Answer.Answer (_, _, envs, store) -> failwith "huh?!"
-    | _ -> failwith "wrong answer type for machine eval"
 
   let ljs_eval cmd () =
     let ljs = pop_ljs cmd in
@@ -466,11 +437,6 @@ module S5 = struct
           (showType [AnswerT; LjsT] [AnswerT]);
         unitCmd "-eval-s5" ljs_eval
           "evaluate S5 code";
-        unitCmd "-continue-machine-eval"
-          (fun cmd () -> continue_machine_eval cmd (); print_value cmd ())
-          (showType [CAnswerT; LjsT] [CAnswerT]);
-        unitCmd "-eval-machine" machine_eval
-          "evaluate S5 code using an abstract machine";
         unitCmd "-eval-cps" cps_eval
           "evaluate code in CPS form";
         unitCmd "-eval-cps-abs" cps_eval_abs

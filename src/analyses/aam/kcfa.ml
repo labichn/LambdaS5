@@ -2,7 +2,6 @@ module C = Acontext
 module K = Akont
 module H = Ahandle
 module SH = Ashared
-module L = Clattice
 module SYN = Ljs_syntax
 type addr = Ashared.addr
 let addr0 = Ashared.addr0

@@ -1,6 +1,6 @@
 .PHONY = clean builddir debug
 
-INCLUDES = analyses/cfg,analyses/cps,analyses/sym,analyses/ses,js,exprjs,ljs,util,experimental,test,machine,machine/con,machine/abs
+INCLUDES = analyses/aam,analyses/cfg,analyses/cps,analyses/sym,analyses/ses,js,exprjs,ljs,util,experimental,test
 
 OCAMLBUILD = ocamlbuild -build-dir ../obj -libs unix,str,graph,oUnit -lflags -I,../lib -Is $(INCLUDES) -cflags -annot -cflags -I,../lib -Is $(INCLUDES)
 
@@ -8,7 +8,7 @@ debug: builddir
 	@rm -f aval
 	@rm -f s5.d.byte
 	$(OCAMLBUILD) test_aval.d.byte s5.d.byte
-	@ln -s ../obj/machine/abs/test_aval.d.byte aval
+	@ln -s ../obj/analyses/aam/test_aval.d.byte aval
 	@ln -s ../obj/s5.d.byte
 
 
