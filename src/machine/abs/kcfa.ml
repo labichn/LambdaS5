@@ -2,7 +2,6 @@ module C = Acontext
 module K = Akont
 module H = Ahandle
 module SH = Ashared
-module V = Avalue
 module L = Clattice
 module SYN = Ljs_syntax
 type addr = Ashared.addr
@@ -22,7 +21,7 @@ let rec trunc k t = match k, t with
   | n, t::ts -> t::(trunc (n-1) ts)
 
 let tick k context store okont ohand : time = match context, okont, ohand with
-  | C.Ap (p, V.VL (L.Con (V.Clos _)), _, _, _, t), _, _
+  | C.Ap (p, `Clos _, _, _, _, t), _, _
   | C.Co (_, _, _, _, t), Some (K.Let (p, _, _, _, _, _)), _
   | C.Co (_, _, _, _, t), Some (K.Rec (p, _, _, _, _, _)), _
   | C.Co (_, _, _, _, t), Some (K.SetBang (p, _, _, _)), _ ->
@@ -31,25 +30,62 @@ let tick k context store okont ohand : time = match context, okont, ohand with
   | C.Co _, _, Some (hand) -> time_of_hand hand
   | C.Co _, Some (kont), _ -> time_of_kont kont
   | _, _, _ -> time_of_context context
+
 let alloc k context store okont ohand : addr = match context, okont, ohand with
+  (* let and letrec binding is var-name::(trunc k time), easy *)
   | C.Ev (SYN.Rec (_, name, _, _), _, _, _, t), _, _
   | C.Co _, Some (K.Let (_, t, name, _, _, _)), _ ->
     SH.T ((SH.X name)::(trunc k t))
-  | C.Ex (_, _, _, t), _, Some (H.Cat (p, _, _, _, _, _))
-  | C.Co _, _, Some (H.Fin (p, t, _, _, _, _))
+  (* other evs are simple, because konts and hands don't get derefed and
+     there's no choice to be made *)
+  | C.Ev (exp, _, _, _, t), _, _ ->
+    SH.T ((SH.P (SYN.pos_of exp))::(trunc k t))
+  | C.EvA (p, _, _, _, _, t), _, _
+  (* apps need to allocate for each of the args, as they get stuck into
+     the konts, and they are temporarily bound to their posn and trunced
+     time. Hmmm.
+     REVISIT: why not just bind them for application here? I've got the
+       xs available, and I just have to go through the same process of
+       allocation again anyway. The time shouldn't be different, as long
+       as I pull it from the app kont. Try this after object redo *)
   | C.Co (_, p, _, _, _), Some (K.App (_, t, _, _, _)), _
   | C.Co (_, p, _, _, _), Some (K.App2 (_, t, _, _, _, _, _)), _
-  | C.Co _, Some (K.OpTwo (p, t, _,  _, _, _)), _
-  | C.Co _, Some (K.Break (p, t, _, _, _)), _
-  | C.Co _, Some (K.Throw (p, t, _, _)), _ ->
+  (* thanks to the split store, and since objects have a single attrs rec,
+     we can just use the object's position as our location head *)
+  | C.CoA (_, _, _, _), Some (K.Object (p, t, _, _, _)), _
+  (* data and accessors can't use object location, since there can be an
+     arbitrary number of them for each object and we don't want to conflate
+     them. cops pass back the position of one of the evaluated exps to use
+     as the location we bind props to. Once app args are fixed to be bound
+     only once, cops are the only motivation to thread pos through co*s. 
+     Hmmm.
+     REVISIT:
+     What if I just use the name of the prop, and then I can remove
+     pos entirely from context. LIE! alloc_kont needs them so app2s
+     and object2s don't conflate *)
+  | C.CoP (_, p, _, _, _), Some (K.Object2 (_, t, _, _, _, _, _)), _
+  (* ex is a whole other animal, the time of the exception may be vastly
+     different than the hand's time, but it also throws up an environment.
+     the time should stay consistent with whatever environment is considered
+     live, so we grab the time from there. *)
+  | C.Ex (_, _, _, t), _, Some (H.Cat (p, _, _, _, _, _)) ->
     SH.T ((SH.P p)::(trunc k t))
+  (* other cos allocate to hold intermediary values in konts, and since
+     the allocation is driven by the kont, make it kont specific *)
+  | C.Co _, Some kont, _ ->
+    SH.T ((SH.P (K.pos_of kont))::(trunc k (K.time_of kont)))
     
 let alloc' k context store okont ohand : addr list = match context with
-  | C.Ap (p, V.VL (L.Con (V.Clos (_, xs, _))), vlds, _, _, t) ->
+  | C.Ap (p, `Clos (_, xs, _), vs, _, _, t) ->
     List.fold_right (fun x a -> (SH.T ((SH.X x)::(trunc k t)))::a) xs []
+
 let alloc_kont k context store okont ohand = match context, okont, ohand with
+  (* to avoid conflating k.dataprops and k.accprops *)
+  | C.EvP (_, (_, SYN.Data ({ SYN.value=exp }, _, _)), _, _, _, t), _, _
+  | C.EvP (_, (_, SYN.Accessor ({ SYN.getter=exp }, _, _)), _, _, _, t), _, _
   | C.Ev (exp, _, _, _, t), _, _ ->
     SH.T ((SH.P (pos_of_exp exp))::(trunc k t))
+  | C.EvA (p, _, _, _, _, t), _, _
   | C.Ex _, _, Some (H.Cat (p, t, _, _, _, _))
   | C.Ex _, _, Some (H.Fin (p, t, _, _, _, _))
   | C.Co (_, p, _, _, _), _, Some (H.Fin (_, t, _, _, _, _)) ->

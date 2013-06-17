@@ -65,6 +65,10 @@ type exp =
   | Throw of Pos.t * exp
   | Lambda of Pos.t * id list * exp
   | Eval of Pos.t * exp * exp (* Pos.t, string to be evaled, env object  *)
+  (* evalau contains an additional name environment generated during an
+     alpha-unique pass, which need be used after desugaring in the same
+     alpha-unique operation to evaluate properly *)
+  | EvalAU of Pos.t * exp * exp * string IdMap.t
   | Hint of Pos.t * string * exp
 and data =       
     {value : exp;
@@ -81,7 +85,6 @@ and attrs =
       proto : exp option;
       klass : string;
       extensible : bool; }
-
 (* Some useful defaults for these things, to avoid typing too much *)
 let d_attrs = 
   { primval = None;

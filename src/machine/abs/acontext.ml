@@ -12,9 +12,11 @@ type env = addr Prelude.IdMap.t
 
 type hand = addr
 type kont = addr
-type value = Avalue.value_ld
-type attrs = Avalue.attrs
-type prop = Avalue.prop
+type value = Lattices.AValue.t
+type attrs = Aobject.attrs
+type prop = Aobject.prop
+
+let string_of_value = Lattices.AValue.string_of
 
 type context =
 | Ev of exp * env * hand * kont * time
@@ -37,8 +39,8 @@ let co p va han kon tim =
   Co (kon, p, va, han, tim)
 let coa va han kon tim =
   CoA (kon, va, han, tim)
-let cop p pair han kon tim =
-  CoP (kon, p, pair, han, tim)
+let cop p name pv han kon tim =
+  CoP (kon, p, (name, pv), han, tim)
 let ap pos va vals han kon tim =
   Ap (pos, va, vals, han, kon, tim)
 let ex e env han tim =
@@ -139,13 +141,13 @@ let string_of con = match con with
   | Ev (exp, _, _, _, _) -> "ev("^(string_of_exp exp)^")"
   | EvA _ -> "eva"
   | EvP _ -> "evp"
-  | Co (_, _, v, _, _) -> "co("^(Avalue.string_of_valueld v)^")"
+  | Co (_, _, v, _, _) -> "co("^(string_of_value v)^")"
   | CoA _ -> "coa"
   | CoP _ -> "cop"
   | Ap (_, f, vlds, _, _, _) ->
-    "ap("^(Avalue.string_of_valueld f)^", "^(Ashared.string_of_list vlds Avalue.string_of_valueld)^")"
+    "ap("^(string_of_value f)^", "^(Ashared.string_of_list vlds string_of_value)^")"
   | Ex _ -> "ex"
-  | Ans (vld, _) -> "ans("^(Avalue.string_of_valueld vld)^")"
+  | Ans (vld, _) -> "ans("^(string_of_value vld)^")"
 
 (*
 let string_of sta = match sta with

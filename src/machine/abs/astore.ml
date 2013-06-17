@@ -2,19 +2,19 @@ open Akont
 open Prelude
 open Ashared
 open Ljs_syntax
-open Avalue
 open Collects
-module L = Clattice
+open Lattices
+open Aobject
 
 type addr = Ashared.addr
 type kont = Akont.kont
 type hand = Ahandle.hand
-type value = Avalue.value_l
-type objekt = Avalue.objekt
-type attrs = Avalue.attrs
-type prop = Avalue.prop
+type value = AValue.t
+type objekt = Aobject.objekt
+type attrs = Aobject.attrs
+type prop = Aobject.prop
 type store = OSet.t AddrMap.t *
-             VLSet.t AddrMap.t *
+             VSet.t AddrMap.t *
              HSet.t AddrMap.t *
              KSet.t AddrMap.t *
              ASet.t AddrMap.t *
@@ -28,7 +28,7 @@ let get k m = AddrMap.find k m
 let get_objs k ((os, _, _, _, _, _) : store) =
   try get k os with Not_found -> OSet.empty
 let get_vals k ((_, vs, _, _, _, _) : store) =
-  try get k vs with Not_found -> VLSet.empty
+  try get k vs with Not_found -> VSet.empty
 let get_hands k ((_, _, hs, _, _, _) : store) =
   try get k hs with Not_found -> HSet.empty
 let get_konts k ((_, _, _, ks, _, _) : store) =
@@ -55,17 +55,13 @@ let set_props addr props (os, vs, hs, ks, ats, ps) =
 let join_obj addr obj ((os, _, _, _, _, _) as sto) =
   let objs = try get addr os with Not_found -> OSet.empty in
   set_objs addr (OSet.add obj objs) sto
-let join_val addr vl ((_, vs, _, _, _, _) as sto) =
-  let vals = try get addr vs with Not_found -> VLSet.empty in
-  set_vals addr (VLSet.add vl vals) sto
-let join_obj_d addr od ((os, _, _, _, _, _) as sto) = match od with
-  | O obj -> join_obj addr obj sto
-  | OA a ->
-    set_objs addr (OSet.union (get_objs a sto) (get_objs addr sto)) sto
-let join_val_ld addr vld ((_, vs, _, _, _, _) as sto) = match vld with
-  | VL vl -> join_val addr vl sto
-  | VA a ->
-    set_vals addr (VLSet.union (get_vals a sto) (get_vals addr sto)) sto
+let rec join_val addr v ((_, vs, _, _, _, _) as sto) = match v with
+  | `Delay addr' ->
+    VSet.fold (fun v acc -> join_val addr v acc) (get_vals addr' sto) sto
+  | _ ->
+  let vals = try get addr vs with Not_found -> VSet.empty in
+  if VSet.exists (fun v' -> AValue.subsume v' v) vals then sto
+  else set_vals addr (VSet.add v vals) sto
 let join_hand addr hand ((_, _, hs, _, _, _) as sto) =
   let hands = try get addr hs with Not_found -> HSet.empty in
   set_hands addr (HSet.add hand hands) sto
@@ -86,18 +82,6 @@ let filter f (os, vs, hs, ks, ats, ps) =
    AddrMap.filter f ks,
    AddrMap.filter f ats,
    AddrMap.filter f ps)
-
-let envstore_of_obj addrs (_, props) store =
-  let _, env, store' =
-    IdMap.fold
-      (fun id prop (addr::addrs', env, store) -> match prop with
-      | Data ({value=v}, _, _) ->
-        let env' = IdMap.add id addr env in
-        let store' = join_val addr v store in
-        (addrs', env', store')
-      | _ -> failwith "Non-data value in env_of_obj")
-      props
-      (addrs, IdMap.empty, store) in env, store'
 
 (*
   let get_attr attr obj field store = match obj, field with

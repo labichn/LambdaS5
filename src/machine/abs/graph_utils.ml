@@ -1,5 +1,6 @@
 open Graph
 open Amachine
+open Lattices
 
 let string_of_exp exp = match exp with
   | SYN.Null _ -> "null"
@@ -39,13 +40,13 @@ let string_of_con con = match con with
   | C.Ev (exp, _, _, _, _) -> "ev("^(string_of_exp exp)^")"
   | C.EvA _ -> "eva"
   | C.EvP _ -> "evp"
-  | C.Co (_, _, v, _, _) -> "co("^(Avalue.string_of_valueld v)^")"
+  | C.Co (_, _, v, _, _) -> "co("^(AValue.string_of v)^")"
   | C.CoA _ -> "coa"
   | C.CoP _ -> "cop"
   | C.Ap (_, f, vlds, _, _, _) ->
-    "ap("^(Avalue.string_of_valueld f)^", "^(Ashared.string_of_list vlds Avalue.string_of_valueld)^")"
+    "ap("^(AValue.string_of f)^", "^(Ashared.string_of_list vlds AValue.string_of)^")"
   | C.Ex _ -> "ex"
-  | C.Ans (vld, _) -> "ans("^(Avalue.string_of_valueld vld)^")"
+  | C.Ans (vld, _) -> "ans("^(AValue.string_of vld)^")"
 
 let to_dot g =
   let _uid = ref 0 in
