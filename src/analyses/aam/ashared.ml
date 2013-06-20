@@ -72,7 +72,7 @@ let string_of_env e =
 let rec string_of_exp exp = match exp with
   | SYN.Null _ -> "null"
   | SYN.Undefined _ -> "undef"
-  | SYN.String (_, _) -> "string"
+  | SYN.String (_, v) -> "string("^v^")"
   | SYN.Num (_, _) -> "num"
   | SYN.True _ -> "true"
   | SYN.False _ -> "false"
@@ -102,11 +102,3 @@ let rec string_of_exp exp = match exp with
   | SYN.Lambda (_, xs, e) -> "lam("^(string_of_list xs (fun x->x))^", "^(string_of_exp e)^")"
   | SYN.Eval (_, _, _) -> "eval"
   | SYN.Hint (_, _, _) -> "hint"
-
-(*
-let summ_string_of_store (os, vs, hs, ks) =
-  "store(#obj: "^(string_of_int (ObjektMap.cardinal os))^
-    ", #val: "^(string_of_int (ValueMap.cardinal vs))^
-    ", #hand: "^(string_of_int (HandMap.cardinal hs))^
-    ", #kont: "^(string_of_int (KontMap.cardinal ks))^")"
-*)

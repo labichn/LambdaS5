@@ -324,6 +324,19 @@ module S5 = struct
              FX.horz [FX.text "ERROR  <="; Ljs_cps_absdelta.ValueLattice.pretty err]] Format.str_formatter;
     printf "%s\n" (Format.flush_str_formatter ())
 
+  let aam_aval cmd dotpath = begin
+    let ljs = pop_ljs cmd in
+(*    print_endline "Analyzing ljs expression:" ;
+    Ljs_pretty.exp ljs Format.std_formatter; print_newline(); *)
+    let Answer.Answer (_, _, envs, store) = pop_answer cmd in
+    print_endline "Converting initial heap...";
+    let env', store' = Convert.env_to_a (last envs), Convert.store_to_a store in
+    let graph = Amachine.analyze 100 Adelta.op1 Adelta.op2 ljs (desugar !json_path)
+      env' store' true in
+    Graph_utils.write_cvgraph dotpath graph;
+    print_endline ("Done analyzing. State graph written to "^dotpath^".");
+  end
+    
   let ljs_eval cmd () =
     let ljs = pop_ljs cmd in
     let answer = Ljs_eval.eval_expr ljs (desugar !json_path) !stack_trace in
@@ -429,6 +442,8 @@ module S5 = struct
           "<VAR> Pop something off the stack and save it under the name VAR";
         strCmd "-get" get_var
           "<VAR> Push the thing saved as VAR onto the stack (use this after -set)";
+        strCmd "-aval" (fun cmd dotpath -> aam_aval cmd dotpath)
+          "analyze λS5";
         (* Evaluation *)
         unitCmd "-eval" (fun cmd () -> ljs_eval cmd (); print_value cmd ())
           "evaluate S5 code and print the result";
@@ -436,8 +451,8 @@ module S5 = struct
           (fun cmd () -> continue_ljs_eval cmd (); print_value cmd ())
           (showType [AnswerT; LjsT] [AnswerT]);
         unitCmd "-eval-s5" ljs_eval
-          "evaluate S5 code";
-        unitCmd "-eval-cps" cps_eval
+          "evaluate S5 code"; 
+       unitCmd "-eval-cps" cps_eval
           "evaluate code in CPS form";
         unitCmd "-eval-cps-abs" cps_eval_abs
           "abstractly evaluate code in CPS form";

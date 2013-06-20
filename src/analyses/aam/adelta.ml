@@ -35,6 +35,8 @@ let rec set_attr attr ({ exten=ext }, props) field newval =
       (* Updating values only checks writable *)
       | Data ({ writable = `True } as d, enum, config), SYN.Value, v ->
         Data ({ d with value = v }, enum, config)
+      | Data ({ writable = w } as d, enum, config), SYN.Value, v ->
+        failwith "trying to write to an unwritable field!"
       (* If we had a data property, update it to an accessor *)
       | Data (d, enum, `True), SYN.Setter, setterv ->
         Accessor ({ getter = `Undef; setter = setterv }, enum, `True)
@@ -63,7 +65,12 @@ let rec set_attr attr ({ exten=ext }, props) field newval =
         Accessor (a, new_enum, `True)
       | Accessor (a, enum, `False), SYN.Config, `False ->
         Accessor (a, enum, `False)
-      | _ -> raise (PrimErr "[interp] bad property set")
+      | TopProp, _, _ -> TopProp
+      | x, y, z -> begin
+        print_endline (match x with
+        | Data _ -> "data" | Accessor _ -> "access" | _ -> "topprop");
+        print_endline (SYN.string_of_attr y);
+        raise (PrimErr "[interp] bad property set") end
 
 let to_int v = match v with
   | `Num x -> int_of_float x

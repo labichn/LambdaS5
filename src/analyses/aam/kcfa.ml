@@ -19,27 +19,28 @@ let rec trunc k t = match k, t with
   | 0, _ -> []
   | n, t::ts -> t::(trunc (n-1) ts)
 
-let tick k context store okont ohand : time = match context, okont, ohand with
-  | C.Ap (p, `Clos _, _, _, _, t), _, _
-  | C.Co (_, _, _, _, t), Some (K.Let (p, _, _, _, _, _)), _
-  | C.Co (_, _, _, _, t), Some (K.Rec (p, _, _, _, _, _)), _
-  | C.Co (_, _, _, _, t), Some (K.SetBang (p, _, _, _)), _ ->
+let tick k context : time = match context with
+  | C.Ap (p, `Clos _, _, _, _, _, t)
+  | C.Co (K.Let (p, _, _, _, _, _), _, _, _, _, t)
+  | C.Co (K.Rec (p, _, _, _, _, _), _, _, _, _, t)
+  | C.Co (K.SetBang (p, _, _, _), _, _, _, _, t) ->
     trunc k ((SH.P p)::t)
-  | _, None, Some (hand) -> time_of_context context
-  | C.Co _, _, Some (hand) -> time_of_hand hand
-  | C.Co _, Some (kont), _ -> time_of_kont kont
-  | _, _, _ -> time_of_context context
+  | c when C.kont_of c = K.Mt -> C.time_of context
+  | C.Co (k, _, _, _, _, _)
+  | C.CoP (k, _, _, _, _, _)
+  | C.CoA (k, _, _, _, _, _) -> time_of_kont k
+  | _ -> time_of_context context
 
-let alloc k context store okont ohand : addr = match context, okont, ohand with
+let alloc k context : addr = match context with
   (* let and letrec binding is var-name::(trunc k time), easy *)
-  | C.Ev (SYN.Rec (_, name, _, _), _, _, _, t), _, _
-  | C.Co _, Some (K.Let (_, t, name, _, _, _)), _ ->
+  | C.Ev (SYN.Rec (_, name, _, _), _, _, _, _, t)
+  | C.Co (K.Let (_, t, name, _, _, _), _, _, _, _, _) ->
     SH.T ((SH.X name)::(trunc k t))
   (* other evs are simple, because konts and hands don't get derefed and
      there's no choice to be made *)
-  | C.Ev (exp, _, _, _, t), _, _ ->
+  | C.Ev (exp, _, _, _, _, t) ->
     SH.T ((SH.P (SYN.pos_of exp))::(trunc k t))
-  | C.EvA (p, _, _, _, _, t), _, _
+  | C.EvA (p, _, _, _, _, _, t)
   (* apps need to allocate for each of the args, as they get stuck into
      the konts, and they are temporarily bound to their posn and trunced
      time. Hmmm.
@@ -47,52 +48,42 @@ let alloc k context store okont ohand : addr = match context, okont, ohand with
        xs available, and I just have to go through the same process of
        allocation again anyway. The time shouldn't be different, as long
        as I pull it from the app kont. Try this after object redo *)
-  | C.Co (_, p, _, _, _), Some (K.App (_, t, _, _, _)), _
-  | C.Co (_, p, _, _, _), Some (K.App2 (_, t, _, _, _, _, _)), _
+  | C.Co (K.App (_, t, _, _, _, _), p, _, _, _, _)
   (* thanks to the split store, and since objects have a single attrs rec,
      we can just use the object's position as our location head *)
-  | C.CoA (_, _, _, _), Some (K.Object (p, t, _, _, _)), _
-  (* data and accessors can't use object location, since there can be an
-     arbitrary number of them for each object and we don't want to conflate
-     them. cops pass back the position of one of the evaluated exps to use
-     as the location we bind props to. Once app args are fixed to be bound
-     only once, cops are the only motivation to thread pos through co*s. 
-     Hmmm.
-     REVISIT:
-     What if I just use the name of the prop, and then I can remove
-     pos entirely from context. LIE! alloc_kont needs them so app2s
-     and object2s don't conflate *)
-  | C.CoP (_, p, _, _, _), Some (K.Object2 (_, t, _, _, _, _, _)), _
+  | C.CoA (K.Object (p, t, _, _, _, _, _), _, _, _, _, _)
+  | C.CoP (K.Object (_, t, _, _, _, _, _), p, _, _, _, _)
   (* ex is a whole other animal, the time of the exception may be vastly
      different than the hand's time, but it also throws up an environment.
      the time should stay consistent with whatever environment is considered
      live, so we grab the time from there. *)
-  | C.Ex (_, _, _, t), _, Some (H.Cat (p, _, _, _, _, _)) ->
+  | C.Ex (_, _, _, H.Cat (p, _, _, _, _, _), t) ->
     SH.T ((SH.P p)::(trunc k t))
   (* other cos allocate to hold intermediary values in konts, and since
      the allocation is driven by the kont, make it kont specific *)
-  | C.Co _, Some kont, _ ->
+  | C.Co (kont, _, _, _, _, _)
+  | C.CoP (kont, _, _, _, _, _)
+  | C.CoA (kont, _, _, _, _, _)->
     SH.T ((SH.P (K.pos_of kont))::(trunc k (K.time_of kont)))
+  | _ -> print_endline ("whoops: "^(C.string_of context)); failwith "oops"
     
-let alloc' k context store okont ohand : addr list = match context with
-  | C.Ap (p, `Clos (_, xs, _), vs, _, _, t) ->
+let alloc' k context : addr list = match context with
+  | C.Ap (p, `Clos (_, xs, _), vs, _, _, _, t) ->
     List.fold_right (fun x a -> (SH.T ((SH.X x)::(trunc k t)))::a) xs []
 
-let alloc_kont k context store okont ohand = match context, okont, ohand with
+let alloc_kont k context = match context with
   (* to avoid conflating k.dataprops and k.accprops *)
-  | C.EvP (_, (_, SYN.Data ({ SYN.value=exp }, _, _)), _, _, _, t), _, _
-  | C.EvP (_, (_, SYN.Accessor ({ SYN.getter=exp }, _, _)), _, _, _, t), _, _
-  | C.Ev (exp, _, _, _, t), _, _ ->
+  | C.EvP (_, (_, SYN.Data ({ SYN.value=exp }, _, _)), _, _, _, _, t)
+  | C.EvP (_, (_, SYN.Accessor ({ SYN.getter=exp }, _, _)), _, _, _, _, t)
+  | C.Ev (exp, _, _, _, _, t) ->
     SH.T ((SH.P (pos_of_exp exp))::(trunc k t))
-  | C.EvA (p, _, _, _, _, t), _, _
-  | C.Ex _, _, Some (H.Cat (p, t, _, _, _, _))
-  | C.Ex _, _, Some (H.Fin (p, t, _, _, _, _))
-  | C.Co (_, p, _, _, _), _, Some (H.Fin (_, t, _, _, _, _)) ->
+  | C.EvA (p, _, _, _, _, _, t)
+  | C.Ex (_, _, _, H.Cat (p, t, _, _, _, _), _)
+  | C.Ex (_, _, _, H.Fin (p, t, _, _, _, _), _) ->
     SH.T ((SH.P p)::(trunc k t))
-  | C.Co (_, p, _, _, _), Some (kont), _ ->
-    SH.T ((SH.P p)::(trunc k (time_of_kont kont)))
-let alloc_hand k context store okont ohand = match context with
-  | C.Ev (exp, _, _, _, t) -> SH.T ((SH.P (pos_of_exp exp))::(trunc k t))
+
+let alloc_hand k context = match context with
+  | C.Ev (exp, _, _, _, _, t) -> SH.T ((SH.P (pos_of_exp exp))::(trunc k t))
 
 (*
 Ticking occurs from a user initiated binding:

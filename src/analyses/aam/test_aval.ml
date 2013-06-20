@@ -46,6 +46,17 @@ let test_simples () = begin
   let fact5g = test' fact5 5 in (* what should I do with deltas? *)
   Graph_utils.write_cvgraph "tests/fact5.dot" fact5g ;
 
+  let au_test = SYN.Let (fp(),
+                         "x",
+                         SYN.Let (fp(),
+                                  "x",
+                                  SYN.Num (fp(), 1.),
+                                  SYN.Num (fp(), 2.)),
+                         SYN.App (fp(), SYN.Id (fp(), "x"), [SYN.Id (fp(), "x")])) in
+  let aut = Au.alpha_unique au_test in
+  Ljs_pretty.exp aut Format.std_formatter;
+  print_newline(); print_newline();
+
   
 end
 ;;

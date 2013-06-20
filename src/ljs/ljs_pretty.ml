@@ -21,7 +21,7 @@ let rec vert_intersperse a lst = match lst with
 let rec exp_helper exprec e = match e with
   | Null _ -> text "null"
   | Undefined _ -> text "undefined"
-  | Num (_,n) -> text (string_of_float n)
+  | Num (p,n) -> text (string_of_float n)
   | String (_,s) -> text ("\"" ^ (String.escaped s) ^ "\"")
   | True _ -> text "true"
   | False _-> text "false"
@@ -58,7 +58,7 @@ let rec exp_helper exprec e = match e with
   | Op1 (p, op, e) -> 
     squish [text "prim"; parens (horz [text ("\"" ^ op ^ "\","); exprec e])]
   | Op2 (p, op, e1, e2) ->
-    squish [text "prim"; parens (horz [text ("\"" ^ op ^ "\","); exprec e1; text ","; exprec e2])]
+    squish [text ("prim"^(Prelude.Pos.string_of_pos p)); parens (horz [text ("\"" ^ op ^ "\","); exprec e1; text ","; exprec e2])]
   | If (p, c, t, e) -> 
     horz [text "if"; vert [parens (horz [exprec c]);
                            braces (exprec t);

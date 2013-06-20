@@ -37,16 +37,16 @@ let string_of_exp exp = match exp with
   | SYN.Hint (_, _, _) -> "hint"
 
 let string_of_con con = match con with
-  | C.Ev (exp, _, _, _, _) -> "ev("^(string_of_exp exp)^")"
+  | C.Ev (exp, _, _, _, _, _) -> "ev("^(string_of_exp exp)^")"
   | C.EvA _ -> "eva"
   | C.EvP _ -> "evp"
-  | C.Co (_, _, v, _, _) -> "co("^(AValue.string_of v)^")"
+  | C.Co (_, _, v, _, _, _) -> "co("^(AValue.string_of v)^")"
   | C.CoA _ -> "coa"
   | C.CoP _ -> "cop"
-  | C.Ap (_, f, vlds, _, _, _) ->
+  | C.Ap (_, f, vlds, _, _, _, _) ->
     "ap("^(AValue.string_of f)^", "^(Ashared.string_of_list vlds AValue.string_of)^")"
   | C.Ex _ -> "ex"
-  | C.Ans (vld, _) -> "ans("^(AValue.string_of vld)^")"
+  | C.Ans (vld, _, _) -> "ans("^(AValue.string_of vld)^")"
 
 let to_dot g =
   let _uid = ref 0 in
@@ -54,11 +54,11 @@ let to_dot g =
   let hash = Hashtbl.create (G.nb_vertex g) in
   let vertices =
     G.fold_vertex
-      (fun con a -> begin
+      (fun (con, v) a -> begin
         let nuid = uid() in
-        Hashtbl.add hash con nuid;
+        Hashtbl.add hash (con, v) nuid;
         "  "^(string_of_int nuid)^" ["^
-          "label=\""^(string_of_con con)^"\""^
+          "label=\""^(string_of_con con)^", "^(string_of_int v)^"\""^
           "shape=box"^
           "]\n"^a
       end)

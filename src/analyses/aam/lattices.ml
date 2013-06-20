@@ -17,9 +17,6 @@
 *)
 module SYN = Ljs_syntax
 
-
-
-
 module type LATTYPE = sig type t end
 
 module type LATTICE = sig
@@ -49,6 +46,9 @@ end
 module BoolF(L : BoolS) = struct
   type t0 = BoolT.t
   type t = L.t
+  (* yes, having verbose annotations before every argument in the
+     definitions is a pain, but not nearly as bad as three layers of
+     type constructors for each use of a value... *)
   let join ((`True | `False | `Top | `Bot) as b : t0)
       ((`True | `False | `Top | `Bot) as b' : t0) : t = match b, b' with
     | `Bot, b | b, `Bot -> b
@@ -88,9 +88,7 @@ module ClosF(L : ClosS) = struct
     match c, c' with `Top, _ | _, `Bot -> true | _ -> c = c'
   let string_of ((`Clos _ | `Top | `Bot) as c : t0) : string = match c with
     | `Clos (env, xs, exp) ->
-      "clos("^(Ashared.string_of_env env)^", "^
-        (Ashared.string_of_list xs (fun x -> x))^", "^
-        (Ashared.string_of_exp exp)^")"
+      "clos"
     | `Top -> "clos⊤" | `Bot -> "clos⊥"
 end
 
@@ -158,7 +156,7 @@ module ConstStrF(L : ConstStrS) = struct
       ((`Str _ | `Top | `Bot) as s' : t0) =
     match s, s' with `Top, _ | _, `Bot -> true | _ -> s = s'
   let string_of ((`Str _ | `Top | `Bot) as s : t0) : string = match s with
-    | `Str s -> s | `Top -> "string⊤" | `Bot -> "string⊥"
+    | `Str s -> "'"^s^"'" | `Top -> "string⊤" | `Bot -> "string⊥"
 end
 
 module NullT = struct type t = [ `Null | `Top | `Bot ] end

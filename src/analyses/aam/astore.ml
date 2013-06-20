@@ -83,112 +83,14 @@ let filter f (os, vs, hs, ks, ats, ps) =
    AddrMap.filter f ats,
    AddrMap.filter f ps)
 
-(*
-  let get_attr attr obj field store = match obj, field with
-  | Obj (L.Con addr), String (L.Con s) ->
-  let objs = get_obj addr store in
-  ObjektSet.fold (fun elt acc -> get_attr
-  | Obj _, String _ -> L.Top
-  | _ -> failwith ("[interp] get-attr didn't get an object and a string.")
-
-  let get_attr' attr (attrs, props) store =
-  if (not (IdMap.mem s props)) then Undef
-  else (match (IdMap.find s props), attr with
-  | Data (_, _, config), Config
-  | Accessor (_, _, config), Config -> bool config
-  | Data (_, enum, _), Enum
-  | Accessor (_, enum, _), Enum -> bool enum
-  | Data ({ writable = b; }, _, _), Writable -> bool b
-  | Data ({ value = v; }, _, _), Value -> v
-  | Accessor ({ getter = gv; }, _, _), Getter -> gv
-  | Accessor ({ setter = sv; }, _, _), Setter -> sv
-  | _ -> failwith "bad access of attribute"))
-
-  let get_obj_attr attrs attr = match attrs, attr with
-  | { proto=proto }, Proto -> proto
-  | { extensible=extensible} , Extensible -> bool extensible
-  | { code=Some code}, Code -> code
-  | { code=None}, Code -> Null
-  | { primval=Some primval}, Primval -> primval
-  | { primval=None}, Primval ->
-  failwith "[interp] Got Primval attr of None"
-  | { klass=klass }, Klass -> String klass
-  let rec get_prop p obj field store = match obj with
-  | Null -> None
-  | Obj (L.Con addr) -> (match get_obj addr store with
-  | ({ proto = pvalue; }, props) ->
-  try Some (IdMap.find field props)
-  with Not_found -> get_prop p pvalue field store)
-  | Obj _ -> None
-  | _ -> failwith "get_prop on a non-object."
-  let rec set_attr attr obj field newval store = match obj, field with
-  | Obj (L.Con addr), String (L.Con f_str) -> (match get_obj addr store with
-  | ({ extensible = ext; } as attrsv, props) ->
-  if not (IdMap.mem f_str props) then
-  if ext then
-  let newprop = match attr with
-  | Getter ->
-  Accessor ({ getter = newval; setter = Undef; },  false, false)
-  | Setter ->
-  Accessor ({ getter = Undef; setter = newval; },  false, false)
-  | Value ->
-  Data ({ value = newval; writable = false; }, false, false)
-  | Writable ->
-  Data ({ value = Undef; writable = unbool newval }, false, false)
-  | Enum ->
-  Data ({ value = Undef; writable = false }, unbool newval, true)
-  | Config ->
-  Data ({ value = Undef; writable = false }, true, unbool newval) in
-  let store =
-  set_obj addr (attrsv, IdMap.add f_str newprop props) store in
-  true, store
-  else
-  failwith "[interp] Extending inextensible object."
-  else
-  let newprop = match (IdMap.find f_str props), attr, newval with
-          (* Writable true -> false when configurable is false *)
-  | Data ({ writable = true } as d, enum, config), Writable, new_w ->
-  Data ({ d with writable = unbool new_w }, enum, config)
-  | Data (d, enum, true), Writable, new_w ->
-  Data ({ d with writable = unbool new_w }, enum, true)
-          (* Updating values only checks writable *)
-  | Data ({ writable = true } as d, enum, config), Value, v ->
-  Data ({ d with value = v }, enum, config)
-          (* If we had a data property, update it to an accessor *)
-  | Data (d, enum, true), Setter, setterv ->
-  Accessor ({ getter = Undef; setter = setterv }, enum, true)
-  | Data (d, enum, true), Getter, getterv ->
-  Accessor ({ getter = getterv; setter = Undef }, enum, true)
-          (* Accessors can update their getter and setter properties *)
-  | Accessor (a, enum, true), Getter, getterv ->
-  Accessor ({ a with getter = getterv }, enum, true)
-  | Accessor (a, enum, true), Setter, setterv ->
-  Accessor ({ a with setter = setterv }, enum, true)
-          (* An accessor can be changed into a data property *)
-  | Accessor (a, enum, true), Value, v ->
-  Data ({ value = v; writable = false; }, enum, true)
-  | Accessor (a, enum, true), Writable, w ->
-  Data ({ value = Undef; writable = unbool w; }, enum, true)
-          (* enumerable and configurable need configurable=true *)
-  | Data (d, _, true), Enum, new_enum ->
-  Data (d, unbool new_enum, true)
-  | Data (d, enum, true), Config, new_config ->
-  Data (d, enum, unbool new_config)
-  | Data (d, enum, false), Config, Bool false ->
-  Data (d, enum, false)
-  | Accessor (a, enum, true), Config, new_config ->
-  Accessor (a, enum, unbool new_config)
-  | Accessor (a, enum, true), Enum, new_enum ->
-  Accessor (a, unbool new_enum, true)
-  | Accessor (a, enum, false), Config, Bool false ->
-  Accessor (a, enum, false)
-  | _ -> raise (PrimErr ([], String (L.Con "[interp] bad property set")))
-  in
-  let store =
-  set_obj addr (attrsv, IdMap.add f_str newprop props) store in
-  true, store)
-  | Obj _, String _ -> false, store
-  (* NRL: probably need to revisit the false here *)
-  | _ -> raise (PrimErr ([], String (L.Con ("[interp] set-attr didn't get"
-  ^ " an object and a string"))))
-*)
+let string_of ((os, vs, hs, ks, ats, ps) : store) =
+  let string_of_am m string_of_elm =
+    if AddrMap.is_empty m then "empty!" else
+      AddrMap.fold (fun k v acc ->
+        "  "^(Ashared.string_of_addr k)^"-->"^(string_of_elm v)^"\n"^acc)
+        m "" in
+  let dumb size = (fun x -> (string_of_int (size x))) in
+  "store {\nobjs"^(string_of_am os (dumb OSet.cardinal))^"\nvals"^
+    (string_of_am vs (fun vs' -> VSet.fold (fun v acc -> (AValue.string_of v)^", "^acc) vs' ""))^"\nhands"^
+    (string_of_am hs (dumb HSet.cardinal))^"\nkonts"^
+    (string_of_am ks (dumb KSet.cardinal))^"\n}"

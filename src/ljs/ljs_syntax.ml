@@ -182,6 +182,7 @@ let child_exps (exp : exp) : exp list =
   | Throw (_, x) -> [x]
   | Lambda (_, _, x) -> [x]
   | Eval (_, x, y) -> [x; y]
+  | EvalAU (_, x, y, _) -> [x; y]
   | Hint (_, _, x) -> [x]
 
 let rec free_vars (exp : exp) : IdSet.t =
