@@ -1,76 +1,13 @@
 module SYN = Ljs_syntax
-open Astore
-open Lattices
 open Prelude
-open Aerror
-open Collects
-open Aobject
+open Aam_collects
+open Aam_error
+open Aam_lattices
+open Aam_object
+open Aam_store
 
 open AValue (* from Lattices *)
 type value = AValue.t
-
-let rec set_attr attr ({ exten=ext }, props) field newval =
-  if not (IdMap.mem field props) then
-    if ext = `True then match attr with
-    | SYN.Getter ->
-      Accessor ({ getter = newval; setter = `Undef }, `False, `False)
-    | SYN.Setter ->
-      Accessor ({ getter = `Undef; setter = newval; },  `False, `False)
-    | SYN.Value ->
-      Data ({ value = newval; writable = `False; }, `False, `False)
-    | SYN.Writable ->
-      Data ({ value = `Undef; writable = newval }, `False, `False)
-    | SYN.Enum ->
-      Data ({ value = `Undef; writable = `False }, newval, `True)
-    | SYN.Config ->
-      Data ({ value = `Undef; writable = `False }, `True, newval)
-    else failwith "trying to extend inextensible object!"
-  else
-    match IdMap.find field props, attr, newval with
-      (* Writable true -> false when configurable is false *)
-      | Data ({ writable = `True } as d, enum, config), SYN.Writable, new_w ->
-        Data ({ d with writable = new_w }, enum, config)
-      | Data (d, enum, `True), SYN.Writable, new_w ->
-        Data ({ d with writable = new_w }, enum, `True)
-      (* Updating values only checks writable *)
-      | Data ({ writable = `True } as d, enum, config), SYN.Value, v ->
-        Data ({ d with value = v }, enum, config)
-      | Data ({ writable = w } as d, enum, config), SYN.Value, v ->
-        failwith "trying to write to an unwritable field!"
-      (* If we had a data property, update it to an accessor *)
-      | Data (d, enum, `True), SYN.Setter, setterv ->
-        Accessor ({ getter = `Undef; setter = setterv }, enum, `True)
-      | Data (d, enum, `True), SYN.Getter, getterv ->
-        Accessor ({ getter = getterv; setter = `Undef }, enum, `True)
-      (* Accessors can update their getter and setter properties *)
-      | Accessor (a, enum, `True), SYN.Getter, getterv ->
-        Accessor ({ a with getter = getterv }, enum, `True)
-      | Accessor (a, enum, `True), SYN.Setter, setterv ->
-        Accessor ({ a with setter = setterv }, enum, `True)
-      (* An accessor can be changed into a data property *)
-      | Accessor (a, enum, `True), SYN.Value, v ->
-        Data ({ value = v; writable = `False; }, enum, `True)
-      | Accessor (a, enum, `True), SYN.Writable, w ->
-        Data ({ value = `Undef; writable = w; }, enum, `True)
-      (* enumerable and configurable need configurable=true *)
-      | Data (d, _, `True), SYN.Enum, new_enum ->
-        Data (d, new_enum, `True)
-      | Data (d, enum, `True), SYN.Config, new_config ->
-        Data (d, enum, new_config)
-      | Data (d, enum, `False), SYN.Config, `False ->
-        Data (d, enum, `False)
-      | Accessor (a, enum, `True), SYN.Config, new_config ->
-        Accessor (a, enum, new_config)
-      | Accessor (a, enum, `True), SYN.Enum, new_enum ->
-        Accessor (a, new_enum, `True)
-      | Accessor (a, enum, `False), SYN.Config, `False ->
-        Accessor (a, enum, `False)
-      | TopProp, _, _ -> TopProp
-      | x, y, z -> begin
-        print_endline (match x with
-        | Data _ -> "data" | Accessor _ -> "access" | _ -> "topprop");
-        print_endline (SYN.string_of_attr y);
-        raise (PrimErr "[interp] bad property set") end
 
 let to_int v = match v with
   | `Num x -> int_of_float x
@@ -89,7 +26,7 @@ let typeof store v = match v with
       | _ -> join acc (str "function"))
       (get_objs a store) `Bot
   | `Clos _ -> raise (PrimErr "typeof got lambda")
-  | _ -> raise (PrimErr "typeof fallthrough")
+  | _ -> `StrT
 
 let is_closure store v = match v with
   | `Clos _ -> `True
@@ -109,15 +46,15 @@ let float_str n =
       then string_of_int (int_of_float n)
       else string_of_float n
 
-let prim_to_str store v = str (match v with
-  | `Undef -> "undefined"
-  | `Null -> "null"
-  | `Str s -> s
+let prim_to_str store v = match v with
+  | `Undef -> str "undefined"
+  | `Null -> str "null"
+  | `Str s -> str s
   | `Num n ->
     let fs = float_str n in
     let fslen = String.length fs in
     if String.get fs (fslen - 1) = '.' then
-      String.sub fs 0 (fslen - 1)
+      str (String.sub fs 0 (fslen - 1))
     else
         (* This is because we don't want leading zeroes in the "-e" part.
          * For example, OCaml says 1.2345e-07, but ES5 wants 1.2345e-7 *)
@@ -129,15 +66,15 @@ let prim_to_str store v = str (match v with
            let fixed = if slen > 1 && (String.get suffix 0 = '0')
              then String.sub suffix 1 (slen - 1)
              else suffix in
-           prefix ^ fixed
-      else fs
-  | `True -> "true"
-  | `False -> "false"
-  | _ -> raise (PrimErr "strlen"))
+           str (prefix ^ fixed)
+      else str fs
+  | `True -> str "true"
+  | `False -> str "false"
+  | _ -> `StrT
 
 let strlen store s = match s with
   | `Str s -> `Num (float_of_int (String.length s))
-  | _ -> raise (PrimErr "strlen")
+  | _ -> `NumT
 
   (* Section 9.3, excluding objects *)
 let prim_to_num store v = num (match v with
@@ -162,6 +99,7 @@ let prim_to_bool store v = bool (match v with
 let print store v = match v with
   | `Str s -> printf "%s\n%!" s; `Undef
   | `Num n -> let s = string_of_float n in printf "%S\n" s; `Undef
+  | _ -> printf "%s\n%!" (AValue.string_of v); `Undef
   | _ -> failwith ("[interp] Print received non-string: " ^ string_of v)
 
 let pretty store v =
@@ -257,34 +195,43 @@ let numstr store = function
 let current_utc store = function
   | _ -> `Num (Unix.gettimeofday ())
 
+
+
 let op1 store op : value -> value =
 (*  let f = *)match op with
-  | "typeof" -> typeof store
-  | "closure?" -> is_closure store
-  | "primitive?" -> is_primitive store
-  | "prim->str" -> prim_to_str store
-  | "prim->num" -> prim_to_num store
-  | "prim->bool" -> prim_to_bool store
+(* return undef *)
   | "print" -> print store
   | "pretty" -> pretty store
-  | "object-to-string" -> object_to_string store
-  | "strlen" -> strlen store
-  | "is-array" -> is_array store
-  | "to-int32" -> to_int32 store
-  | "!" -> nnot store
   | "void" -> void store
+
+(* return string *)
+  | "typeof" -> typeof store
+  | "prim->str" -> prim_to_str store
+  | "object-to-string" -> object_to_string store
+  | "ascii_ntoc" -> ascii_ntoc store
+  | "to-lower" -> to_lower store
+  | "to-upper" -> to_upper store
+
+(* return num *)
+  | "prim->num" -> prim_to_num store
+  | "strlen" -> strlen store
+  | "to-int32" -> to_int32 store
   | "floor" -> floor' store
   | "ceil" -> ceil' store
   | "abs" -> absolute store
   | "log" -> log' store
-  | "ascii_ntoc" -> ascii_ntoc store
   | "ascii_cton" -> ascii_cton store
-  | "to-lower" -> to_lower store
-  | "to-upper" -> to_upper store
   | "~" -> bnot store
-  | "sin" -> sine store
   | "numstr->num" -> numstr store
   | "current-utc-millis" -> current_utc store
+
+(* return bool *)
+  | "closure?" -> is_closure store
+  | "primitive?" -> is_primitive store
+  | "prim->bool" -> prim_to_bool store
+  | "is-array" -> is_array store
+  | "!" -> nnot store
+  | "sin" -> sine store
   | _ ->
     raise (PrimErr ("no implementation of unary operator: " ^ op))(* in
   ((fun v -> match v with
@@ -379,23 +326,25 @@ let same_value store v1 v2 = bool (match v1, v2 with
   | _ -> Pervasives.compare v1 v2 = 0)
 
 let rec has_property store obj field = match obj, field with
-  | `Obj loc, `Str s ->
+  | `Obj loc, _ ->
     OSet.fold
-      (fun ({ proto=proto }, props) acc ->
+      (fun ({ proto=proto }, props) acc -> begin
         join acc
-          (if IdMap.mem s props then `True else has_property store proto field))
+          (if PropMap.mem field props then `True
+           else has_property store proto field) end)
       (get_objs loc store) `Bot
   | _ -> `False
 
 let has_own_property store obj field = match obj, field with
-  | `Obj loc, `Str s ->
+  | `Obj loc, _ ->
     OSet.fold
-      (fun (_, props) acc -> join acc (bool (IdMap.mem s props)))
+      (fun (_, props) acc -> join acc (bool (PropMap.mem field props)))
       (get_objs loc store) `Bot
   | `Obj loc, _ ->
     raise (PrimErr "has-own-property: field not a string")
   | _, `Str s ->
-    raise (PrimErr ("has-own-property: obj not an object for field " ^ s))
+    begin print_endline (AValue.string_of obj);
+    raise (PrimErr ("has-own-property: obj not an object for field " ^ s)) end
   | _ ->
     raise (PrimErr "has-own-property: neither an object nor a string")
 
@@ -464,12 +413,12 @@ let to_fixed store a b = match a, b with
   | _ -> raise (PrimErr "to-fixed didn't get 2 numbers")
 
 let rec is_accessor store a b = match a, b with
-  | `Obj loc, `Str s ->
+  | `Obj loc, _ ->
     OSet.fold
       (fun (attrs, props) acc ->
         join acc
-          (if IdMap.mem s props then
-              match IdMap.find s props with Data _ -> `False | _ -> `True
+          (if PropMap.mem b props then
+              match PropMap.lookup b props with Data _ -> `False | _ -> `True
            else let { proto=proto } = attrs in is_accessor store proto b))
       (get_objs loc store) `Bot
   | `Null, `Str s -> raise (PrimErr "isAccessor topped out")

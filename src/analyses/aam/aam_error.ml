@@ -1,12 +1,17 @@
 type exp = Ljs_syntax.exp
-type addr = Ashared.addr
+type addr = Aam_shared.addr
 type value = addr
-type env = addr Prelude.IdMap.t
-type store = Astore.store
+type env = Aam_env.env
+type store = Aam_store.store
 
 exception Throw of value
 exception PrimErr of string
 exception Break of string * value
+
+let string_of ex = match ex with
+  | Throw _ -> "throw"
+  | PrimErr s -> "primerr("^s^")"
+  | Break (l, _) -> "break("^l^")"
 
 let interp_error pos message =
   raise (PrimErr ("[interp] (" ^ Prelude.Pos.string_of_pos pos ^ ") " ^ message))

@@ -533,7 +533,7 @@ let err show_stack trace message =
     failwith "Runtime error"
 
 let au exp =
-  Au.alpha_unique ~not_top_level:true ~next:(fun n -> n-1) exp
+  Aam_au.alpha_unique ~not_top_level:true ~next:(fun n -> n-1) exp
 
 let continue_eval expr desugar print_trace env store = try
   Sys.catch_break true;
@@ -558,4 +558,5 @@ with
       err print_trace t (sprintf "Uncaught error: %s\n" (pretty_value v))
 
 let eval_expr expr desugar print_trace =
-  continue_eval (au expr) desugar print_trace IdMap.empty (Store.empty, Store.empty)
+  let aue, ext = au expr in
+  continue_eval aue desugar print_trace IdMap.empty (Store.empty, Store.empty)

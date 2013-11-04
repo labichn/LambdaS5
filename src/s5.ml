@@ -13,9 +13,10 @@ type node =
   | Ljs of Ljs_syntax.exp
   | Cps of Ljs_cps.cps_exp
   | Env of (Ljs_syntax.exp -> Ljs_syntax.exp)
+  | Inl of Aam_inline.expmap
   | Answer of answer
 
-type nodeType = JsT | EjsT | LjsT | CpsT | EnvT | AnswerT
+type nodeType = JsT | EjsT | LjsT | CpsT | EnvT | AnswerT | InlT
 
 let nodeType (node : node) : nodeType =
   match node with
@@ -24,6 +25,7 @@ let nodeType (node : node) : nodeType =
   | Ljs _ -> LjsT
   | Cps _ -> CpsT
   | Env _ -> EnvT
+  | Inl _ -> InlT
   | Answer (Answer.Answer _) -> AnswerT
 
 
@@ -35,6 +37,7 @@ let showNodeType (nodeType : nodeType) : string =
   | CpsT -> "S5-cps"
   | EnvT -> "S5-env"
   | AnswerT -> "Snapshot"
+  | InlT -> "Inline Env"
 
 
 module S5 = struct
@@ -57,6 +60,7 @@ module S5 = struct
 
   let json_path = ref "../tests/desugar.sh"
   let stack_trace = ref true
+  let verbosep = ref false
 
   let set_stack_trace (cmdName : string) (on : bool) : unit =
     stack_trace := on
@@ -103,6 +107,11 @@ module S5 = struct
     | Ejs (used_ids, src) -> (used_ids, src)
     | node -> type_error cmd EjsT node
 
+  let pop_inl cmd : Aam_inline.expmap =
+    match pop cmd with
+    | Inl em -> em
+    | node -> type_error cmd InlT node
+
   let pop_ljs cmd : Ljs_syntax.exp =
     match pop cmd with
     | Ljs src -> src
@@ -123,6 +132,7 @@ module S5 = struct
     | Answer answer -> answer
     | node -> type_error cmd AnswerT node
 
+  let push_inl em = push (Inl em)
   let push_js js = push (Js js)
   let push_ejs (used_ids, ejs) = push (Ejs (used_ids, ejs))
   let push_ljs ljs = push (Ljs ljs)
@@ -282,6 +292,14 @@ module S5 = struct
     let alph cps = fst (Ljs_cps_util.alphatize true (cps, IdMap.add "%error" 0 (IdMap.add "%answer" 0 IdMap.empty))) in
     push_cps (alph (pop_cps cmd))
 
+  let save_id_exp_map cmd file_name =
+    let inl = pop_inl cmd in
+    Marshal.to_channel (open_out_bin file_name) inl []
+
+  let load_id_exp_map cmd file_name =
+    let inl = Marshal.from_channel (open_in_bin file_name) in
+    push_inl inl
+
   let save_answer cmd file_name =
     let ans = pop_answer cmd in
     Marshal.to_channel (open_out_bin file_name) ans []
@@ -324,18 +342,35 @@ module S5 = struct
              FX.horz [FX.text "ERROR  <="; Ljs_cps_absdelta.ValueLattice.pretty err]] Format.str_formatter;
     printf "%s\n" (Format.flush_str_formatter ())
 
-  let aam_aval cmd dotpath = begin
-    let ljs = pop_ljs cmd in
-(*    print_endline "Analyzing ljs expression:" ;
-    Ljs_pretty.exp ljs Format.std_formatter; print_newline(); *)
-    let Answer.Answer (_, _, envs, store) = pop_answer cmd in
-    print_endline "Converting initial heap...";
-    let env', store' = Convert.env_to_a (last envs), Convert.store_to_a store in
-    let graph = Amachine.analyze 100 Adelta.op1 Adelta.op2 ljs (desugar !json_path)
-      env' store' true in
-    Graph_utils.write_cvgraph dotpath graph;
-    print_endline ("Done analyzing. State graph written to "^dotpath^".");
+  let aam_aval dotpath = begin
+    let verbose = !verbosep in
+    let ljs = pop_ljs "" in
+    let ext = pop_inl "" in
+    (if verbose then begin print_endline "Analyzing ljs expression:";
+     Ljs_pretty.exp ljs Format.std_formatter; print_newline() end);
+    let ljs' = Aam_inline.inline ext ljs in
+    (if verbose then begin print_endline "after inlining:" ;
+     Ljs_pretty.exp ljs' Format.std_formatter; print_newline() end); 
+    let Answer.Answer (_, _, envs, store) = pop_answer "" in
+    (if verbose then print_endline "Converting initial heap...");
+    let env', store' =
+      Aam_convert.env_to_a (last envs), Aam_convert.store_to_a store in
+    let dur, count, anscount, excount, succ =
+      Aam.TimeStamped.analyze ~verbose:verbose ~env0:env' ~store0:store'
+        ~path:dotpath 0 (desugar !json_path) ljs' in
+    ()
   end
+    
+  let ljs_eval_inline cmd loop = begin
+    print_endline "gah!";
+    let ljs = pop_ljs cmd in
+    let ljs', _ = Aam_inline.inline_and_env ~n:5 IdMap.empty ljs in
+    let aue, _ = Aam_au.alpha_unique ljs' in
+    let em = Aam_inline.let_map IdMap.empty aue in
+(*    Ljs_pretty.exp ljs' Format.std_formatter;*)
+    let answer = Ljs_eval.eval_expr aue (desugar !json_path) !stack_trace in
+    print_endline "gahgah!";
+    push_inl em; push_answer answer end
     
   let ljs_eval cmd () =
     let ljs = pop_ljs cmd in
@@ -377,6 +412,7 @@ module S5 = struct
   let strCmd = command (fun cmd -> Arg.String cmd)
   let boolCmd = command (fun cmd -> Arg.Bool cmd)
   let unitCmd = command (fun cmd -> Arg.Unit cmd)
+  let intCmd = command (fun cmd -> Arg.Int cmd)
   let showType fromTypes toTypes =
     let showTypeList types = String.concat " " (List.map showNodeType types) in
     "(" ^ showTypeList fromTypes ^ " -> " ^ showTypeList toTypes ^ ")"
@@ -434,6 +470,10 @@ module S5 = struct
           "Check if ses ran properly. ANS(init) ANS(ses) -> ";
         unitCmd "-alph" alphatize
           "Alpha-convert the CPS representation";
+        strCmd "-save-inl" save_id_exp_map
+          "<file> save an id to exp map in the specified file";
+        strCmd "-load-inl" load_id_exp_map
+          "<file> load the id to exp map from a file";
         strCmd "-save" save_answer
           "<file> save the heap and environment in the specified file";
         strCmd "-load" load_answer
@@ -442,8 +482,8 @@ module S5 = struct
           "<VAR> Pop something off the stack and save it under the name VAR";
         strCmd "-get" get_var
           "<VAR> Push the thing saved as VAR onto the stack (use this after -set)";
-        strCmd "-aval" (fun cmd dotpath -> aam_aval cmd dotpath)
-          "analyze λS5";
+        ("-verbose", Arg.Set verbosep, "");
+        ("-aval", Arg.String aam_aval, "");
         (* Evaluation *)
         unitCmd "-eval" (fun cmd () -> ljs_eval cmd (); print_value cmd ())
           "evaluate S5 code and print the result";
@@ -452,6 +492,8 @@ module S5 = struct
           (showType [AnswerT; LjsT] [AnswerT]);
         unitCmd "-eval-s5" ljs_eval
           "evaluate S5 code"; 
+        intCmd "-eval-inlined-s5" ljs_eval_inline
+          "evaluate S5 code, with aggressively inlined expressions";
        unitCmd "-eval-cps" cps_eval
           "evaluate code in CPS form";
         unitCmd "-eval-cps-abs" cps_eval_abs
