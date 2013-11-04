@@ -1,0 +1,56 @@
+AAM for ECMAScript 5.1
+
+Implemented:
+- CESH*K* abstract interpreter
+- concrete and kcfa configuration
+
+TODO:
+- cleanup
+- add global binding and other precision destroying es5.env funcs to delta
+- benchmark
+
+By file:
+
+aam_step.ml
+  module type LOCKSTEP
+    Ties an AAM into a particular `step'
+  module Make(U : LOCKSTEP)
+    Creates a small-step eval function `step'
+
+aam.ml
+  module type AAM
+    The transition function and a fixpoint finder. Specifies and operates on
+    its system.
+  module type Conf
+    Parameters to the step function: `alloc*', `desugar', `tick'.
+  module *Lock
+    Ties a step to a particular AAM's configuration.
+  module TimeStamped
+    An AAM instance: global, time-stamped store with abstract counting.
+
+aam_{context,env,handle,kont,lattices,object,error}.ml
+  Machine context and components--the state space save the store.
+
+aam_{delta_map,delta,store}.ml
+  Stores, abstract counting for strong updates/deletes, store-deltas.
+
+aam_au.ml - Alpha-uniquifies LJS syntax (src/ljs/ljs_syntax.ml)
+
+aam_collects.ml - collections for shared use
+
+aam_convert.ml - converts LJS structures to src/analyses/aam structures
+
+aam_gc.ml - abstract gc for non-time-stamped stores
+
+aam_inline.ml
+  Still feels like a hack, but I need to do some testing on the speed/precision
+  implications. Andy knows more about this.
+
+aam_kcfa.ml
+  KCFA-style allocation and time-stamping.
+
+aam_shared.ml
+  Miscellaneous helpers.
+
+aam_test_aval.ml
+  Turns into src/aval, sanity-tests.
