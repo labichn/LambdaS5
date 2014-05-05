@@ -1,0 +1,646 @@
+\documentclass[preprint,9pt]{sigplanconf} %{onecol}
+\usepackage{amsfonts,amsmath,amsthm}
+\usepackage{pxfonts}
+\usepackage{natbib}
+\usepackage{bm}
+\usepackage{balance}
+\usepackage{wrapfig}
+\usepackage{comment}
+\usepackage[T1]{fontenc}
+
+\newtheorem{mdef}{Definition}
+\newtheorem{mlem}{Lemma}
+\newtheorem{mtheo}{Theorem}
+
+\input{preamble}
+
+\begin{document}
+
+\conferenceinfo{WXYZ '05}{date, City.}
+\copyrightyear{2005}
+\copyrightdata{[to be supplied]}
+
+%\titlebanner{banner above paper title}
+%\preprintfooter{short description of paper}
+
+\title{Analyzing JavaScript: The Bad Parts}
+
+\authorinfo{Nicholas Labich}
+           {Northeastern University}
+           {labichn@ccs.neu.edu}
+\authorinfo{Shuying Liang}
+           {University of Utah}
+           {liansy@cs.utah.edu}
+\authorinfo{Matthew Might}
+           {University of Utah}
+           {might@cs.utah.edu}
+\authorinfo{David Van Horn}
+           {Northeastern University}
+           {dvanhorn@ccs.neu.edu}
+
+\maketitle
+
+\mtodo{Something pithy about JS: the good parts in abstract or
+  intro... might be a good task for Might.}
+
+\begin{abstract}
+JavaScript is the ubiquitous, powerful, and flagrantly-dynamic lingua
+franca of the web. Though the frequent object of current research, to
+date attempts at static analysis tackle calculated subsets of the
+language, eliding (thereby going unsound for) the darker corners:
+property and object descriptors, getters and setters, strict mode,
+and eval. Leveraging $\lambda$S5, a core semantics encapsulating the
+ECMAScript 5.1 standard, we detail the approach and implementation of
+a \emph{sound} abstract interpretation of full, modern JavaScript.
+\end{abstract}
+
+\section{Introduction}
+JavaScript has clear domain over today's web programming. It has been
+the tool of choice on the client-side for some time. The popularity of
+Node.js and other server-side JavaScript solutions is growing. It is
+used as a cross-compilation target from C, Java, OCaml, Perl, Scala,
+and many others. JavaScript's expanding community continues to use
+this weakly-typed, dynamic scripting language for large-scale projects
+in both client- and server-side settings. The need for disciplined and
+sound methods of reasoned analysis grows with its popularity.
+
+\mtodo{This paragraph seems more related-work-esque}
+There has been a significant amount of quality research wrt. analysis
+of JavaScript. Much of this research has focused on security and
+correctness~\cite{Richards:dynamism}. As \emph{the} front-end language
+of the web, JavaScript is a prime target for attack, and there has
+been a great deal of interest in analysis as tool to improve
+security~\cite{chugh2009staged, Guha:2009:USA:1526709.1526785,
+  maffeis2009isolating, vogt2007cross,
+  Yu:2007:JIB:1190216.1190252}. As a dynamic scripting language, much
+work has focused on error detection by augmenting JavaScript with a
+static type system~\cite{anderson2006type, anderson2003babyj,
+  anderson2005type, heidegger2009recency, heidegger2009recency,
+  hackett2012fast}. \mtodo{No leading as in this sentence:} As detailed
+by Richards~\cite{Richards:dynamism}, these efforts operate on subsets
+of the language, often ignoring many of the nuances, pecularities, and
+dark corners: the global object, prototypical inheritence, prototype
+dynamism, property addition/deletetion, and eval.  Moreover, all of
+this work targets pre-ES5.1 JavaScript. It is these aspects of
+JavaScript's informally specified semantics that we (jocularly) refer
+to as the \emph{bad parts}.
+
+The lack of a formal semantics has been one of the largest hurdles
+preventing a disciplined analysis of JavaScript\footnote{The use of
+  'JavaScript' hereafter denotes EMCAScript 5.1
+  (ES5)~\cite{ecma2009ecma}; exceptions will be noted
+  explicitly.}. The first full and formal specification of the
+ECMAScript 3rd edition (ES3) was released in
+2008~\cite{Ramalingam:PLS}, nearly ten years after the specification's
+publication. Guha et al. took a different
+approach~\cite{Guha:2010:EJ:1883978.1883988}, implementing a core
+language, $\lambda$JS, that when paired with a desugaring function
+from ES3 to $\lambda$JS, effectively and accurately models the ES3
+semantics, sans eval. Politz et
+al.~\cite{Politz:2012:TSG:2480360.2384579} continued with
+$\lambda$JS's approach with $\lambda$S5. $\lambda$S5 formalizes and
+implementes a core syntax and semantics that, paired with a desugaring
+function, models all of JavaScript's semantics, including object and
+property descriptors, getters and setters, strict mode, and
+eval. Details of the semantics and desugaring will be explicated where
+they play a pivital role in analysis; full exposition and design
+rationale can be found in ~\emph{A tested semantics for getters,
+  setters, and eval in
+  JavaScript}~\cite{Politz:2012:TSG:2480360.2384579}.
+
+Targeting $\lambda$S5 is not without disadvantages. The desugared code
+is larger than its sugared counterpart, translating what could be
+logic internal to the analyzer into expressions which must be
+evaluated. Also, much of the global JavaScript functionality is
+implemented in an initial environment written directly in $\lambda$S5,
+which complicates analysis \mtodo{Point to later discussion}. Despite
+these obstacles, $\lambda$S5 is far more amenable to description
+by a reduction semantics and to evaluation by abstract machine,
+enabling principled and \emph{sound} abstraction. As the only formal
+semantics for full, modern JavaScript, we focus our aim on the
+abstract interpretation of $\lambda$S5.
+
+\paragraph{Contributions}
+\mtodo{goto Might about properly articulating these}
+\begin{itemize}
+\item Details of the abstractions and implementation techniques that
+  entail a tractably computable analysis of JavaScript, with careful
+  attention paid to \emph{the bad parts}.
+\item A sound and provably correct abstract interpreter of full,
+  modern JavaScript through $\lambda$S5.
+\end{itemize}
+
+\paragraph{Background}
+We assume some familiarity with reduction semantics and abstract
+machines~\cite{felleisen1986control,felleisen2009semantics}. The leap
+from abstract machine to abstract interpreter follows the methodology
+of Van Horn \& Might's \emph{Abstracting Abstract Machines} and later
+work on optimization of such analyzers~\cite{van2010abstracting,
+  DBLP:journals/corr/abs-1211-3722}.
+
+\section{The Core of JavaScript}
+Brendan Eich, per his personal
+blog\footnote{https://brendaneich.com/2008/04/popularity/}, ``was
+recruited to Netscape with the promise of `doing Scheme' in the
+browser''. His efforts birthed the original JavaScript. It is
+unsurprising that the resultant language is susceptible to desugaring
+into a functional core language, though, as detailed by Politz et
+al.~\cite{Politz:2012:TSG:2480360.2384579} and as we will discuss
+later \mtodo{Point to later discussion}, the process is far from
+trivial. We take the desugaring process to be a black-box for now
+(and later as a parameter to our analyzer \mtodo{Point to later
+  discussion}).  After desugaring we are left with $\lambda$S5 (figure
+~\ref{fig:syntax}).
+
+What remains is akin to a curly-braced member of Landin's ISWIM
+family~\cite{landin1966next}, extended with a full compliment of
+values, set!-like side effects, labeled and exceptional control-flow,
+eval, and a map-like object system. A lexically-scoped, functional
+language, $\lambda$S5's semantics can easily be described as the
+reduction relation of an abstract machine~\cite{felleisen1986control,
+  felleisen2009semantics}. Before we dive into the machine's
+construction and abstraction, we should take a closer look at the
+main difficulties.
+
+\begin{figure}
+%\small
+\[
+\begin{array}{ccll}
+\mvar&:=&\multicolumn{2}{l}{variables}\\
+\mnum&:=&\multicolumn{2}{l}{numeric\ values}\\
+\mstr&:=&\multicolumn{2}{l}{string\ values}\\
+\moloc&:=&\multicolumn{2}{l}{object\ references}\\
+\mlit&:=&\multicolumn{2}{l}{\mnum\ |\ \mstr\ |\ \moloc\ |\ {\bf{null}}\ |\ {\bf{undefined}}\ |\ {\bf{true}}\ |\ {\bf{false}}}\\
+\mvexp&:=&\multicolumn{2}{l}{\mlit\ |\ {\bf{func}}(\mvar,\dots)\ \{\ \mexp\ \}}\\\\
+%\multicolumn{4}{l}{\text{Attribute names}}\\
+\moattr&:=&\multicolumn{2}{l}{{\bf{class}}\ |\ {\bf{extensible}}\ |\ {\bf{proto}}\ |\ {\bf{code}}\ |\ {\bf{primval}}}\\
+\mpattr&:=&\multicolumn{2}{l}{{\bf{writable}}\ |\ {\bf{config}}\ |\ {\bf{value}}\ |\ {\bf{enum}}}\\\\
+%\multicolumn{4}{l}{\text{Property expressions}}\\
+\mpexp&:=&\multicolumn{2}{l}{\text{[}{\bf{config}}:\mexp,\ {\bf{enum}}:\mexp,\ {\bf{value}}:\mexp,\ {\bf{writable}}:\mexp\text{]}}\\
+&|&\multicolumn{2}{l}{\text{[}{\bf{config}}:\mexp,\ {\bf{enum}}:\mexp,\ {\bf{get}}:\mexp,\ {\bf{set}}:\mexp\text{]}}\\\\
+%\multicolumn{4}{l}{\text{Object attributes expressions}}\\
+\maexp&:=&\multicolumn{2}{l}{\text{[}{\bf{class}}:\mexp,{\bf{extensible}}:\mexp,{\bf{proto}}:\mexp,{\bf{code}}:\mexp,{\bf{primval}}:\mexp\text{]}}\\\\
+%\multicolumn{4}{l}{\text{Primops}}\\
+\mopone&:=&\multicolumn{2}{l}{\text{string->num}\ |\ {\bf{typeof}}\ |\ \text{log}\ |\ \text{prim->bool}\ |\ \dots}\\
+\moptwo&:=&\multicolumn{2}{l}{\text{string-append}\ |\ \text{+}\ |\ \div\ |\ \text{>}\ |\ \dots}\\\\
+%\multicolumn{4}{l}{\text{Expressions}}\\
+\mexp&:=&\multicolumn{2}{l}{\mvexp\ |\ \mvar\ |\ \mvar\ :=\ \mexp\ |\ \mopone(\mexp)\ |\ \moptwo(\mexp, \mexp)\ |\ \mexp(\mexp,\dots)}\\
+&|&\multicolumn{2}{l}{\mexp;\mexp\ |\ {\bf{let}}\ \ (\mvar\ \text{=}\ \mexp)\ \mexp\ |\ {\bf{if}}\ \ (\mexp)\ \{\ \mexp\ \}\ {\bf{else}}\ \ \{\ \mexp\ \}}\\
+&|&\multicolumn{2}{l}{{\bf{label}}:\ \mvar\ \mexp\ |\ \ {\bf{break}}\ \ \mvar\ \mexp\ |\ \ {\bf{err}}\ \ \mvexp}\\
+&|&\multicolumn{2}{l}{{\bf{try}}\ \ \mexp\ \ {\bf{catch}}\ \ \mvar\ \mexp\ |\ {\bf{try}}\ \ \mexp\ \ {\bf{finally}}\ \ \mexp\ |\ \ {\bf{throw}}\ \ \mexp}\\
+&|&\multicolumn{2}{l}{{\bf{eval}}(\mexp,\mexp)}\\
+&|&\{\maexp\ \ \mstr:\mpexp,\dots\}&object\ literals\\
+&|&\mexp\text{[}\mexp\text{]}\ |\ \mexp\text{[}\mexp\text{=}\mexp\text{]}\ |\ \mexp\text{[}{\bf{delete}}\ \mexp\text{]}&properties\\
+&|&{\bf{props}}(\mexp)&property\ names\\
+&|&\mexp\text{[<}\moattr\text{>]}\ |\ \mexp\text{[<}\moattr\text{>}\text{=}\mexp\text{]}&object\ attributes\\
+&|&\mexp\text{[}\mexp\text{<}\mpattr\text{>]}\ |\ \mexp\text{[}\mexp\text{<}\mpattr\text{>=}\mexp\text{]}&property\ attributes\\
+\end{array}
+\]
+\caption{Syntax of $\lambda$S5}
+\label{fig:syntax}
+\end{figure}
+
+\section{The \emph{Bad Parts}}
+
+\subsection{Scope and the global object}
+
+$\lambda$S5 is lexically-scoped, which makes quick work of
+JavaScript's Escherian scoping behavior. Consider these simple
+examples\footnote{Borrowed from the third author's blog:
+  http://matt.might.net /articles/javascript-warts/}:
+\begin{verbatim}
+x;  // ReferenceError: x is undefined
+\end{verbatim}
+Accessing an unbound variable raises an exception, as
+expected. However:
+\begin{verbatim}
+x;  // No problem! x is declared in this scope.
+if (false) {
+  var x;
+}
+\end{verbatim}
+This code merely returns the value \emph{undefined}, which denotes
+that the the variable exists but has not been assigned. JavaScript's
+variables are properties in a singleton global object; variable
+definitions, including those in code that will never run, are hoisted
+into that global object. $\lambda$S5 handles JavaScript's global
+object and its unusual scoping rules by converting variable accesses
+to field accesses in a let-bound object \texttt{\%context}. The
+desugarer simply ensures the proper context binding exists where it is
+needed:
+\begin{verbatim}
+  {let (%context = %nonstrictContext)
+    %defineGlobalVar(%context, "x");
+    {let (#strict = false)
+      %context["x",
+               {[#proto: null,
+                 #class: "Object",
+                 #extensible: true,]}];
+      if (%ToBoolean(false)) { undefined }
+      else { undefined }}}
+\end{verbatim}
+
+$\lambda$S5's initial environment includes JavaScript's global
+objects, such as \texttt{console}, \texttt{Object}, et cetera. It also
+includes objects and functions inserted as part of the desugaring
+process, including the \texttt{\%context} object and an
+\emph{\%ErrorDispatch} function. The initial environment is
+implemented directly in \textasciitilde5,000 lines of $\lambda$S5,
+which complicates analysis. Consider the following simple program:
+\begin{verbatim}
+  var x = 1;
+  var y = 2;
+  x;
+\end{verbatim}
+which desugars to the following $\lambda$S5 expression:
+\begin{verbatim}
+  {let (%context = %nonstrictContext)
+    %defineGlobalVar(%context, "y");
+    %defineGlobalVar(%context, "x");
+    {let (#strict = false)
+      %EnvCheckAssign(%context, "x", 1., #strict);
+      %EnvCheckAssign(%context, "y", 2., #strict);
+      %context["x" ,
+               {[#proto: null,
+                 #class: "Object",
+                 #extensible: true]}]}}
+\end{verbatim}
+Note the functions \emph{\%EnvCheckAssign} and
+\emph{\%defineGlobalVar}. These are a part of $\lambda$S5's initial
+environment, are inserted during desugaring, and exist in the initial
+context's environment and store courtesy of
+\emph{inject}. \emph{\%EnvCheckAssign} determines whether a particular
+variable exists as a property in the \texttt{\%context}, throwing the
+appropriate \texttt{ReferenceError} if the check
+fails. \emph{\%defineGlobalVar} does precisely what the name purports:
+it defines a global variable by inserting it as a property into
+\texttt{\%context}.
+
+With a monovariant analysis (\'{a} la 0CFA), the arguments of each
+call to these integral functions will conflate, wreaking havok on
+precision. In our implementation, we overcome this obstacle with
+aggressive inlining of a set of library functions, including the two
+above. With unique source positions (i.e. unique store addresses),
+precision is regained. The above example expands from 10 to nearly
+4,000 lines of $\lambda$S5. A more elegant solution would involve
+variant context-sensitivity, allowing for perfect precision in
+library functions.
+
+\subsection{Objects}
+
+JavaScript's objects are by far the most complex aspect of the
+language. Objects operates as maps, where properties can be accessed,
+set, and deleted both statically and dynamically. Previous work on
+object maps~\cite{liang2012hash, fulara2012generic} exposed the core
+problem for abstractions of indexed containers: when a genuine partial
+order (as opposed to a flat partial order) occurs in the domain of
+abstract keys, soundness induces monotonic update. Any abstraction of
+indexed containers with genuine order in its keys' abstract domain
+faces this fundamental problem.
+
+Consider the following example with a basic key-value map: if we want
+to update a key abstracted using prefix-suffix domains (which
+abstracts strings by their longest common prefix and
+suffix)~\cite{costantini2011static}---for instance, (foo, .cc) to
+{3}---it is not enough to merely ``insert'' the entry into the
+abstract map. Rather, to preserve monotonicity, we must also join the
+entry with the values of keys, such as in (foooo, .cc), since (foooo,
+.cc) $\sqsubseteq$ (foo, .cc).
+
+\subsubsection{Intensional abstraction as a monotonic map}
+A direct abstraction of indexed containers (as maps) yields a
+monotonic map. Since the set of keys ($\hat\mkeys$) has its own
+partial order, the abstraction must be monotonic:
+\begin{align*}
+\hat h \in \hat\mhashs = \hat\mkeys \xrightarrow{mon} \hat\mvals
+\end{align*}
+Recall that a function \emph{f} is \emph{monotonic} iff
+\begin{align*}
+x \sqsubseteq y\ \text{implies}\ f(x) \sqsubseteq f(y)
+\end{align*}
+and join on monotonic functions is point-wise:
+\begin{align*}
+(f \sqcup g)(x)\ =\ f(x) \sqcup g(x).
+\end{align*}
+The space operator $\xrightarrow{mon}$ soundly captures the behavior
+of abstract containers.
+
+\subsubsection{Extensional representation}
+The direct structural abstraction of this representation is a set of
+abstract key-value pairs:
+\begin{align*}
+\hat h' \in \hat \mhashs ' = \mpset (\hat\mkeys \times \hat\mvals).
+\end{align*}
+where both the keys $\hat\mkeys$\ and values $\hat\mvals$\  are defined over some
+specific abstract domains, such as the interval domain for integers,
+and the character inclusion domain or prefix-suffix
+domain~\cite{costantini2011static} for strings, et
+cetera. Particularly, we define the bottom of an extensional abstract
+indexed container as $\hat h_\perp$, which meanns there is no entry in
+the container.
+
+\subsubsection{Why \emph{monotonic} maps are problematic}
+Attempting to use the standard balanced-tree- or hash-backed
+implementation of maps for a monotonic map is costly, and in some
+cases, even impossible. While look-ups remain logarithmic and
+efficient, updates (joins) become extremely expensive—even exponential
+for some abstract domains for keys. The problem is that when the
+mapping $x \mapsto y$ is inserted, all keys weaker than $x$ must also
+map to a value consistent with $y$. Finitely enumerating all values
+weaker than $x$ can be expensive (or impossible).
+
+We can formally represent this process by defining an update operator,
+$\mmonjoin$, on non-monotonic maps that keeps them consistent with
+the monotonic join:
+\begin{align*}
+f \mmonjoin [x \mapsto y]\ =\ f \sqcup \bigsqcup_{\substack{\perp
+    \sqsubset x' \sqsubseteq x}} [x' \mapsto y].
+\end{align*}
+That is, if $f:X \rightarrow Y$ and $g:X \xrightarrow{mon} Y$ and
+$f\ =\ g$, then:
+\begin{align*}
+f \mmonjoin [x \mapsto y]\ =\ g \sqcup [x \mapsto y].
+\end{align*}
+Implemented literally, this provides a way to use standard
+abstractions of non-monotonic maps to implement monotonic
+maps---unless the abstract key domain has unbounded height. In that
+case, there may not even be a finite extensional representation of a
+monotonic map as a non-monotonic map. Even in cases where the height
+of the abstract domain is bounded (even simple abstract domains like
+the character-inclusion domain for strings) yield an exponential
+number of updates (exponential in the number of characters in the key
+for the inclusion domain) into the non-monotonic map.
+
+\subsubsection{Widening to \emph{keywise-disjoint} monotonic maps}
+In response to the problems with extending standard abstractions for
+maps to monotonic maps, we need a widening strategy for extensional
+abstractions of indexed containers. This widening strategy keeps
+monotonic maps in an canonical state in which more efficient update
+and look-up operations are possible.
+
+The naive approach depends on finding keys subsumed by the key
+supplied for updates and look-ups, yet it is costly, depending on the
+abstract domain. Instead of enumerating all weaker keys, we perform
+restructuring on the extensional abstract indexed container whenever
+updating the map. This process leaves us with \emph{keywise-disjoint}
+monotonic maps.
+
+First, a few definitions. The interleaving relation:
+
+\begin{mdef}
+\begin{align*}
+R_{iv} \subseteq \hat\mkeys \times \hat\mkeys := \hat k\ R_{iv}\ \hat
+k' \Leftrightarrow  \gamma(\hat k) \cap \gamma(\hat k') \neq \perp
+\end{align*}
+\end{mdef}
+
+and the compatibility relation:
+
+\begin{mdef}
+\begin{align*}
+R_{c} \subseteq \hat\mkeys \times \hat\mkeys := \hat k\ R_{c}\ \hat
+k' \Leftrightarrow \hat k \sqsubseteq \hat k'\ or\ \hat k' \sqsubseteq
+\hat k.
+\end{align*}
+\end{mdef}
+
+\begin{mlem}
+\begin{align*}
+(\hat k\ R_c\ \hat k'\ \neq\ \perp\ or\ \ \hat k \cap \hat
+k'\ \neq\ \perp)\ \Rightarrow\ \hat k\ R_{iv}\ \hat k'
+\end{align*}
+\end{mlem}
+
+\begin{proof}
+By definition 2 and the definition of $\sqcap$ on
+$\hat\mkeys$, where $\hat k,\hat k' \in\ \hat\mkeys$.
+\end{proof}
+
+The key observation is that the computation of the interleaving
+relation is much less expensive than actually enumerating all the
+weaker keys.
+
+\begin{mdef}
+An extensional map $\hat h$ is keywise-disjoint iff for any two
+entries $(\hat k_1, \hat v_1), (\hat k_2, \hat v_2) \in \hat h$, it is
+not the case that $\hat k_1\ R_{iv}\ \hat k_2$.
+\end{mdef}
+
+We define an empty extensional indexed map to be keywise-disjoint.
+
+Whenever updating a new entry $(\hat k,\hat v)$, the keywise-disjoint
+property may be destroyed. We need a method to preserve this property.
+
+To do so, we need a partial choice function, 
+\begin{math}
+split : \hat\mhashs
+\times (\hat\mkeys \times \hat\mvals) \rightharpoonup \hat\mhashs
+\times (\hat\mkeys \times \hat\mvals)
+\end{math},
+which removes one entry from a map whose key are interleaving with the
+key in the updating pair. Specially, if $\hat h$ is empty, then the
+updating entry will be inserted into $\hat h$ and the result will be
+returned.
+
+Then, we must define a
+\begin{math}
+compact : \hat\mhashs \times (\hat\mkeys \times \hat\mvals) \rightarrow \hat\mhashs
+\end{math}
+operation on maps:
+\mtodo{Fix formatting:}
+\begin{align*}
+compact(\hat h, (\hat k, \hat v)) =
+\begin{cases}
+\hat h & split(\hat h, (\hat k, \hat v))\ \text{is not defined} \\
+\hat h' \cup \{(\hat k_1 \sqcup \hat k, \hat v_1 \sqcup \hat v)\} &
+(\hat h', (\hat k_1, \hat v_1)) = split(\hat h, (\hat k, \hat v))
+\end{cases}
+\end{align*}
+
+A $crush$ operation produces a fully keywise-disjoint map by
+iterating $compact$:
+\begin{align*}
+crush(\hat h, (\hat k, \hat v)) = compact^*(\hat h, (\hat k, \hat v))
+\end{align*}
+where $f^*$ means iterated application of $f$ until a fixpoint is
+reached.
+
+Informally speaking, the $crush$ function will join the entries that
+are interleaving with the updating entry, preserving non-interleaving
+entries after the splitting process.
+
+\begin{mtheo}
+Let $\hat h$ be a keywise-disjoint map. If joining $(\hat k, \hat v)$
+into $\hat h$ using the crush function, the resulting map is still a
+keywise-disjoint map.
+\end{mtheo}
+
+\begin{proof}
+By the definitions of $splitting$, $compact$, and $crush$.
+\end{proof}
+
+The lookup function is straightforward:
+\begin{align*}
+lookup(\hat k, \hat h) = \bigsqcup_{\substack{(\hat k',\hat v)\in \hat
+h \\ \hat k\ R_{iv}\ \hat k'}} \hat v
+\end{align*}
+
+\subsubsection{Examples}
+\paragraph{Arrays:}
+Consider an array in the example has interval domain for abstract keys
+and abstract values. Suppose
+\begin{align*}
+arr = ([0,3], [-2,1]), ([5,7], [4,4]), ([9,11], [2,7])
+\end{align*}
+and we want to update the abstract key as [2,5] to
+[8,8]. We apply the $crush$ function (with process flattened
+out):
+\begin{align*}
+{([0, 3]\sqcup[2, 5]\sqcup[5, 7], [−2, 1]\sqcup[4, 4]\sqcup[8, 8]), ([9, 11], [2, 7])}
+\end{align*}
+So the final structure is {([0, 7], [−2,
+    8]), ([9, 11], [2, 7])}.
+
+\paragraph{Maps:}
+Consider a string-keyed map, with character inclusion (where a string
+is represented as a pair of must-have characters and may-have
+characters, respectively) as the string abstraction:
+\begin{align*}
+\hat h = \{(\{\text{a}\}, \{\text{a}, \text{c}, 0\}) \mapsto \{100\}, (\{\text{b}\}, \{\text{b}, 0\}) \mapsto \{200\}\}.
+\end{align*}
+and we want to update the key (\{a, c\}, \{a, c\}) with \{300\}. The restructuring process is as follows:
+\begin{align*}
+\begin{array}{rcl}
+\hat h & = & \text{\{(\{a\},\{a,c,0\})} \sqcup
+\text{(\{a,c\},\{a,c\})} \mapsto \text{\{100\}} \cup
+\text{\{300\},}\\
+&&\ \text{(\{b\},\{b,0\})} \mapsto \text{\{200\}\}} \\
+&=& \text{\{(\{a\}} \cap \text{\{a,c\},\{a,c,0\}} \cup \text{\{a,c\})}
+\mapsto \text{\{100,300\},} \\
+&&\ \text{(\{b,\},\{b,0\})} \mapsto \text{\{200\}\}}
+\end{array}
+\end{align*}
+
+The final result is
+\begin{align*}
+\text{\{(\{a\}, \{a,c,0\})} \mapsto \text{\{100,300\},
+  (\{b\},\{b,0\})} \mapsto \text{\{200\}}.
+\end{align*}
+
+
+\subsubsection{Complexity}
+
+\mtodo{Revisit, doubts about splitting}
+
+\subsubsection{Back to JavaScript}
+Objects in JavaScript are not simple key-value maps: they map keys to
+\emph{properties}. With the latest standard, JavaScript supports both
+object and property descriptors, which allow more fine-tuned control
+over their access.
+
+There are two kinds of properties (as can be seen in
+figure~\ref{fig:syntax}): data and accessors. As a reminder:
+\mtodo{Insert prop values from machine}
+
+Property descriptors all have both a {\bf{configuration}} key, determining
+whether the property's descriptor may be modified and whether the property may
+be deleted, and an {\bf{enumeration}} key, determining whether the property is
+visible when its object's properties are enumerated. Data properties have a
+{\bf{value}} key which holds the value associated with the property and a
+{\bf{writable}} key which determines whether that value may be
+modified. Accessors have {\bf{get}} and {\bf{set}} keys, which map to functions
+applied when the property is accessed or updated, respectively. Abstraction of
+these descriptors is lifts pointwise over the values bound by these keys; since
+the keys are concrete and known, we (thankfully) do not need to treat
+descriptors as a monotonic map. The values of these descriptors, like the
+properties themselves, can be updated long after object initialization.
+
+Objects each have their own set of attributes: {\bf{class}},
+{\bf{code}}, {\bf{extensible}}, {\bf{primval}}, and {\bf{proto}}. Like
+the descriptors of properties, object attributes can be thought of as
+a non-monotonic map from these concrete keys to abstract values. The
+{\bf{class}} property ascribes a nominal type to the object,
+e.g. ``Array'', ``Function'', or ``Object'', which plays a role in
+calls to JavaScript's {\bf{typeof}} operator, among others. All of
+JavaScript's functions are objects, and the {\bf{code}} attribute maps
+to a closure if the object in question is one of these function
+objects. Neither of these two attributes cannot be modified after
+object initialization, matching JavaScript's semantics.
+
+The {\bf{extensible}} descriptor determines whether fields can be
+added to the object, and can be modified when JavaScript's
+\texttt{Object}.$freeze(\dots)$ or \texttt{Object}.$seal(\dots)$
+functions are called. JavaScript's constructors that wrap primitive
+values (e.g. \texttt{Number}$(\dots)$ and \texttt{Boolean}$(\dots)$)
+store that wrapped value in the {\bf{primval}} attribute. The
+{\bf{proto}} attribute holds a reference to the object's
+prototype. Each of these three latter attributes may be modified,
+matching JavaScript's semantics.
+
+%- eval
+%  - four kinds
+%  - love the desugar function
+%  - implementation detail: AU map
+
+\begin{comment}
+\begin{figure}
+\small
+\[
+\begin{array}{rcl}
+%\multicolumn{3}{l}{\text{Values}}\\
+\mtodo{Transliterate the ADTs}
+\end{array}
+\]
+\caption{Abstract machine components}
+\label{fig:amc}
+\end{figure}
+
+\begin{figure}
+\small
+\[
+\begin{array}{rcl}
+\mtodo{Transliterate step.ml}
+\end{array}
+\]
+\caption{Abstracted abstract machine}
+\label{fig:aam}
+\end{figure}
+\end{comment}
+
+\section{Results}
+
+\section{Related Work}
+
+%\cite{Guha:2009:USA:1526709.1526785}
+%- built on $\lambda$JS, lacks 5.1 specifics and full eval
+%- use string shape analysis on the assumption of JSON deserialization
+%for eval
+%\cite{DBLP:journals/corr/abs-1109-4467}
+%- build on $\lambda$JS, lacks 5.1 specifics and eval
+%for strong updates
+%\cite{heidegger2009recency}
+
+\section{Future Work}
+
+%% what should I leave out?
+
+%- specialized desugarer to avoid worst case for all
+%- variant k cfa (perfect precision for library functions, because
+%  inlining is sloppy)
+%- aggro-term with GC
+%- empirical testing of various lattices (plug plug-and-play)
+
+\section{Conclusion}
+
+% wat?
+
+\paragraph{Acknowledgments}
+
+% Ack!
+
+\balance
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

@@ -1,0 +1,171 @@
+\begin{thebibliography}{23}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Anderson and Drossopoulou(2003)]{anderson2003babyj}
+Christopher Anderson and Sophia Drossopoulou.
+\newblock Babyj: From object based to class based programming via types.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}, 82\penalty0
+  (8):\penalty0 53--81, 2003.
+
+\bibitem[Anderson and Giannini(2005)]{anderson2005type}
+Christopher Anderson and Paola Giannini.
+\newblock Type checking for javascript.
+\newblock \emph{Electronic Notes in Theoretical Computer Science}, 138\penalty0
+  (2):\penalty0 37--58, 2005.
+
+\bibitem[Anderson and Drossopoulou(2006)]{anderson2006type}
+Christopher~Lyon Anderson and Sophia Drossopoulou.
+\newblock \emph{Type inference for Javascript}.
+\newblock PhD thesis, University of London, 2006.
+
+\bibitem[Chugh et~al.(2009)Chugh, Meister, Jhala, and Lerner]{chugh2009staged}
+Ravi Chugh, Jeffrey~A Meister, Ranjit Jhala, and Sorin Lerner.
+\newblock Staged information flow for javascript.
+\newblock In \emph{ACM Sigplan Notices}, volume~44, pages 50--62. ACM, 2009.
+
+\bibitem[Costantini et~al.(2011)Costantini, Ferrara, and
+  Cortesi]{costantini2011static}
+Giulia Costantini, Pietro Ferrara, and Agostino Cortesi.
+\newblock Static analysis of string values.
+\newblock In \emph{Formal Methods and Software Engineering}, pages 505--521.
+  Springer, 2011.
+
+\bibitem[Felleisen and Friedman(1986)]{felleisen1986control}
+Matthias Felleisen and Daniel~P Friedman.
+\newblock \emph{Control Operators, the SECD-machine, and the [1]-calculus}.
+\newblock Indiana University, Computer Science Department, 1986.
+
+\bibitem[Felleisen et~al.(2009)Felleisen, Findler, and
+  Flatt]{felleisen2009semantics}
+Matthias Felleisen, Robert~Bruce Findler, and Matthew Flatt.
+\newblock \emph{Semantics Engineering with PLT Redex}.
+\newblock The MIT Press, 2009.
+
+\bibitem[Fulara(2012)]{fulara2012generic}
+J{\k{e}}drzej Fulara.
+\newblock Generic abstraction of dictionaries and arrays.
+\newblock \emph{Electronic Notes in Theoretical Computer Science},
+  287:\penalty0 53--64, 2012.
+
+\bibitem[Guha et~al.(2009)Guha, Krishnamurthi, and
+  Jim]{Guha:2009:USA:1526709.1526785}
+Arjun Guha, Shriram Krishnamurthi, and Trevor Jim.
+\newblock Using static analysis for ajax intrusion detection.
+\newblock In \emph{Proceedings of the 18th international conference on World
+  wide web}, WWW '09, pages 561--570, New York, NY, USA, 2009. ACM.
+\newblock ISBN 978-1-60558-487-4.
+\newblock \doi{10.1145/1526709.1526785}.
+\newblock URL \url{http://doi.acm.org/10.1145/1526709.1526785}.
+
+\bibitem[Guha et~al.(2010)Guha, Saftoiu, and
+  Krishnamurthi]{Guha:2010:EJ:1883978.1883988}
+Arjun Guha, Claudiu Saftoiu, and Shriram Krishnamurthi.
+\newblock The essence of javascript.
+\newblock In \emph{Proceedings of the 24th European conference on
+  Object-oriented programming}, ECOOP'10, pages 126--150, Berlin, Heidelberg,
+  2010. Springer-Verlag.
+\newblock ISBN 3-642-14106-4, 978-3-642-14106-5.
+\newblock URL \url{http://dl.acm.org/citation.cfm?id=1883978.1883988}.
+
+\bibitem[Hackett and Guo(2012)]{hackett2012fast}
+Brian Hackett and Shu-yu Guo.
+\newblock Fast and precise hybrid type inference for javascript.
+\newblock In \emph{ACM SIGPLAN Notices}, volume~47, pages 239--250. ACM, 2012.
+
+\bibitem[Heidegger and Thiemann(2009)]{heidegger2009recency}
+Phillip Heidegger and Peter Thiemann.
+\newblock Recency types for dynamically-typed, object-based languages: Strong
+  updates for javascript.
+\newblock In \emph{ACM SIGPLAN International Workshop on Foundations of
+  Object-Oriented Languages}, 2009.
+
+\bibitem[Johnson et~al.(2012)Johnson, Might, and
+  Horn]{DBLP:journals/corr/abs-1211-3722}
+J.~Ian Johnson, Matthew Might, and David~Van Horn.
+\newblock Optimizing abstract abstract machines.
+\newblock \emph{CoRR}, abs/1211.3722, 2012.
+
+\bibitem[Landin(1966)]{landin1966next}
+Peter~J Landin.
+\newblock The next 700 programming languages.
+\newblock \emph{Communications of the ACM}, 9\penalty0 (3):\penalty0 157--166,
+  1966.
+
+\bibitem[Liang and Might(2012)]{liang2012hash}
+Shuying Liang and Matthew Might.
+\newblock Hash-flow taint analysis of higher-order programs.
+\newblock In \emph{Proceedings of the 7th Workshop on Programming Languages and
+  Analysis for Security}, page~8. ACM, 2012.
+
+\bibitem[Maffeis et~al.(2008)Maffeis, Mitchell, and Taly]{Ramalingam:PLS}
+Sergio Maffeis, JohnC. Mitchell, and Ankur Taly.
+\newblock An operational semantics for javascript.
+\newblock In G.~Ramalingam, editor, \emph{Programming Languages and Systems},
+  volume 5356 of \emph{Lecture Notes in Computer Science}, pages 307--325.
+  Springer Berlin Heidelberg, 2008.
+\newblock ISBN 978-3-540-89329-5.
+\newblock \doi{10.1007/978-3-540-89330-1\_22}.
+\newblock URL \url{http://dx.doi.org/10.1007/978-3-540-89330-1\_22}.
+
+\bibitem[Maffeis et~al.(2009)Maffeis, Mitchell, and Taly]{maffeis2009isolating}
+Sergio Maffeis, John~C Mitchell, and Ankur Taly.
+\newblock Isolating javascript with filters, rewriting, and wrappers.
+\newblock In \emph{Computer Security--ESORICS 2009}, pages 505--522. Springer,
+  2009.
+
+\bibitem[Politz et~al.(2012)Politz, Carroll, Lerner, Pombrio, and
+  Krishnamurthi]{Politz:2012:TSG:2480360.2384579}
+Joe~Gibbs Politz, Matthew~J. Carroll, Benjamin~S. Lerner, Justin Pombrio, and
+  Shriram Krishnamurthi.
+\newblock A tested semantics for getters, setters, and eval in javascript.
+\newblock \emph{SIGPLAN Not.}, 48\penalty0 (2):\penalty0 1--16, October 2012.
+\newblock ISSN 0362-1340.
+\newblock \doi{10.1145/2480360.2384579}.
+\newblock URL \url{http://doi.acm.org/10.1145/2480360.2384579}.
+
+\bibitem[Richards et~al.(2010)Richards, Lebresne, Burg, and
+  Vitek]{Richards:dynamism}
+Gregor Richards, Sylvain Lebresne, Brian Burg, and Jan Vitek.
+\newblock An analysis of the dynamic behavior of javascript programs.
+\newblock In \emph{Proceedings of the 2010 ACM SIGPLAN conference on
+  Programming language design and implementation}, PLDI '10, pages 1--12, New
+  York, NY, USA, 2010. ACM.
+\newblock ISBN 978-1-4503-0019-3.
+\newblock \doi{10.1145/1806596.1806598}.
+\newblock URL \url{http://doi.acm.org/10.1145/1806596.1806598}.
+
+\bibitem[Standard()]{ecma2009ecma}
+ECMA Standard.
+\newblock 262: Ecmascript language specification, december 1999.
+\newblock \emph{Web link: http://www. ecma-international.
+  org/publications/standards/Ecma-262. htm}.
+
+\bibitem[Van~Horn and Might(2010)]{van2010abstracting}
+David Van~Horn and Matthew Might.
+\newblock Abstracting abstract machines.
+\newblock In \emph{ACM Sigplan Notices}, volume~45, pages 51--62. ACM, 2010.
+
+\bibitem[Vogt et~al.(2007)Vogt, Nentwich, Jovanovic, Kirda, Kruegel, and
+  Vigna]{vogt2007cross}
+Philipp Vogt, Florian Nentwich, Nenad Jovanovic, Engin Kirda, Christopher
+  Kruegel, and Giovanni Vigna.
+\newblock Cross site scripting prevention with dynamic data tainting and static
+  analysis.
+\newblock In \emph{NDSS}, 2007.
+
+\bibitem[Yu et~al.(2007)Yu, Chander, Islam, and
+  Serikov]{Yu:2007:JIB:1190216.1190252}
+Dachuan Yu, Ajay Chander, Nayeem Islam, and Igor Serikov.
+\newblock Javascript instrumentation for browser security.
+\newblock In \emph{Proceedings of the 34th annual ACM SIGPLAN-SIGACT symposium
+  on Principles of programming languages}, POPL '07, pages 237--249, New York,
+  NY, USA, 2007. ACM.
+\newblock ISBN 1-59593-575-4.
+\newblock \doi{10.1145/1190216.1190252}.
+\newblock URL \url{http://doi.acm.org/10.1145/1190216.1190252}.
+
+\end{thebibliography}
