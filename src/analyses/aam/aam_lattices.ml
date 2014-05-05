@@ -213,10 +213,13 @@ module DelayF(L : DelayS) = struct
   let string_of (`Delay a : t0) = "delay("^(string_of_addr a)^")"
   let to_top (`Delay a : t0) = `Top
 end
-  
+
+(* To change a lattice, just swap out one of the AValueT types (I),
+ * swap one of the AValueF internal value module's functors (II),
+ * and swap out the respective creator (III). *)
 module AValueT = struct
   type 'a t =
-    (* To change a lattice, just swap out one of these types... *)
+    (* I *)
     [ BoolT.t | ConstNumT.t | UndefT.t | NullT.t | ConstStrT.t | ClosT.t |
       DelayT.t | ObjT.t | `Top | `Bot ]
   let compare = Pervasives.compare
@@ -241,9 +244,7 @@ module AValueF
     type t0 = L.a AValueT.t
     include Types(L)
 
-    (* swap one of these functors...
-                     |
-                     v *)
+    (* II *)
     module   Bool = BoolF(L)
     module   Clos = ClosF(L)
     module  Delay = DelayF(L)
@@ -253,7 +254,7 @@ module AValueF
     module String = ConstStrF(L)
     module  Undef = UndefF(L)
 
-    (* and swap one of these creators, then you're done! *)
+    (* III *)
     let bool (b : bool) = if b then `True else `False
     let clos (env : env) (xs : Prelude.id list) (exp : SYN.exp) =
       `Clos (env, xs, exp)

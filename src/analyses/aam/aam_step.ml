@@ -66,8 +66,8 @@ module type LOCKSTEP = sig
 
   (** adding a lifted context an output *)
   val another: context lcon -> output -> output
-  (** the unit output *)
-  val empty: output
+  (** the zero output *)
+  val empty: context -> output
   (** the union of two outputs *)
   val union: output -> output -> output
 
@@ -101,7 +101,7 @@ module Make(U : LOCKSTEP) = struct
         print xs;
         print_endline (" from "^(SH.string_of_addr addr))
       end);
-      folder (fun x acc' -> union (f x) acc') xs empty end in
+      folder (fun x acc' -> union (f x) acc') xs (empty context) end in
     let val_branch = branch S.get_vals VSet.fold 
       (fun xs ->
         print_endline ((string_of_int (VSet.cardinal xs))^" vs branching");
@@ -122,10 +122,10 @@ module Make(U : LOCKSTEP) = struct
     let objs_branch store f =
       let (os, _, _, _, _, _, _) = store in
       S.OStore.fold (fun a _ outs -> union outs (obj_branch a (f a)))
-        os empty in
+        os (empty context) in
 
     match context with
-    | C.Ans _ -> empty
+    | C.Ans _ -> (empty context)
 
     (* marks, leaving the λS5 environment space *)
 (*    | C.Co (K.MarkK ("λS5", k), p, v, s, H.MarkH ("λS5", h), t) ->
@@ -518,7 +518,7 @@ module Make(U : LOCKSTEP) = struct
                         | O.TopProp ->
                           another (data_lcon `Top kont)
                             (another (acc_lcon `Top objv bodyv kont) outs)))
-                    props empty
+                    props (empty context)
               | _ -> nap (Failure ((string_of_pos p)^" getfield got obj: "^
                                       (AValue.string_of objv)^" and field: "^
                                       (AValue.string_of fieldv))) end))
@@ -658,7 +658,7 @@ module Make(U : LOCKSTEP) = struct
                   union outs
                     (obj_branch oaddr
                        (fun obj -> set_field oaddr obj fieldv nextv)))
-                os empty
+                os (empty context)
             | `Obj oaddr ->
               obj_branch oaddr (fun obj -> set_field oaddr obj fieldv nextv)
             | _ -> nap (Failure "did not receive object in setfield")))
@@ -898,7 +898,7 @@ module Make(U : LOCKSTEP) = struct
                    | (Failure "not enough locs for eval") as ex -> raise ex
                    | ex -> locss', olift (clift (C.NAP ex)))
                 | _ -> failwith "not enough locs for eval")
-                (S.get_objs o store) (locss, empty) in outs
+                (S.get_objs o store) (locss, (empty context)) in outs
           | _, _ ->
             kont_branch k
               (fun kont ->
@@ -911,7 +911,7 @@ module Make(U : LOCKSTEP) = struct
       olift (tick (clift (C.ev store expr env h k)))
 
     (* shedding handles *)
-    | C.Ex (ex, env, store, H.Mt, t) -> empty
+    | C.Ex (ex, env, store, H.Mt, t) -> (empty context)
     | C.Ex (ex, env, store, h, t) ->
       hand_branch (H.hand_of h)
         (fun hand -> olift (tick (clift (C.ex store ex env hand))))

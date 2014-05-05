@@ -79,7 +79,7 @@ module type AAM = sig
       returns system zero for the machine *)
   val inject: env -> store -> exp -> system
   (** analyzes the given λS5 expression, with the option for verbose logging,
-      initial environment & store, and ouput of a dot graph to file.  *)
+      initial environment & store, and output of a dot graph to file.  *)
   val analyze: ?verbose:bool -> ?env0:env -> ?store0:store -> ?path:string ->
     int -> (string -> exp) -> exp -> result
 end
@@ -192,6 +192,49 @@ end) = struct
   let tick = KCFA.tick 0
 end
 
+(*
+module CLock(CONF : Conf) : ST.LOCKSTEP
+  with type output = C.context and type input = C.context = struct
+  include CONF
+
+  type 'a lcon = 'a
+  type input = C.context
+  type output = C.context
+  let context_of_input c = c
+  let olift c = c
+  let clift c = c
+  let union x y = x
+  let another x y = x
+  let empty c = c
+  let tick context ccon = ccon (CONF.tick context)
+  let with_kont context ccon ckont =
+    match context with
+    | C.Ex (_, _, _, h, _) ->
+      let kaddr = H.kont_of h in ccon (ckont kaddr)
+    | _ -> 
+      let kaddr = alloc_kont context in
+      let store' = 
+      (ccon (ckont kaddr),
+       DM.add_kont kaddr (KSet.singleton (C.kont_of context)) delta)
+  let with_hand context (ccon, delta) chand =
+    let hkaddr = alloc_hand context in
+    (ccon (chand hkaddr) K.Mt,
+     DM.add_hand hkaddr (HSet.singleton (C.hand_of context))
+       (DM.add_kont hkaddr (KSet.singleton (C.kont_of context)) delta))
+  let add_obj a o c =
+    let (vs, os, ss, hs, ks, ats, ps) = (C.store_of c) in
+    C.with_store (vs, OStore.
+    C.with_store (C.storeO (c, DM.add_obj a (OSet.singleton o) d)
+  let add_val a v c = (c, DM.add_val a (VSet.singleton v) d)
+  let set_obj a o c = (c, DM.set_obj a (OSet.singleton o) d)
+  let set_val a v c = (c, DM.set_val a (VSet.singleton v) d)
+  let add_hand a h c = (c, DM.add_hand a (HSet.singleton h) d)
+  let add_kont a k c = (c, DM.add_kont a (KSet.singleton k) d)
+  let add_attrs a att c = (c, DM.add_attrs a (O.ASet.singleton att) d)
+  let add_prop a p c = (c, DM.add_prop a (O.PSet.singleton p) d)
+end
+*)
+
 module KcfaConf(C : sig
   val desugar: string -> SYN.exp
   val k: int
@@ -224,7 +267,7 @@ module CDMLock(CONF : Conf) : ST.LOCKSTEP
   let clift c = c, DM.empty
   let union = CDMSet.union
   let another = CDMSet.add
-  let empty = CDMSet.empty
+  let empty _ = CDMSet.empty
   let tick context (ccon, delta) = ccon (CONF.tick context), delta
   let with_kont context (ccon, delta) ckont = match context with
     | C.Ex (_, _, _, h, _) ->
@@ -547,6 +590,32 @@ module TimeStamped : AAM = struct
         (if verbose then print_endline "Done analyzing.");
         res
       end
+end *)
+(*
+module Concrete : AAM = struct
+
+(* seconds elapsed, states stepped, answers found, exceptions found,
+   terminated successfully, state graph
+type result = float * int * int * int * bool *)
+
+  type system = C.context
+  type input = C.context
+  type output = C.context
+  type step = input -> output
+
+  let inject env0 store0 exp =
+    let t0 = [] in C.Ev (exp, env0, store0, H.Mt, K.Mt, t0)
+
+  let transition verbose step context = step context
+
+  let fixp _ context = match context with
+    | Ans _  | NAP _ -> true
+    | _ -> false
+
+  let analyze ?(verbose=false) ?(env0=E.empty) ?(store0=S.empty)
+      ?(path="") kay aspartame exp =
+    let module Step = Aam_step.Make (
+
 end *)
 
 module TimeStamped : AAM = struct

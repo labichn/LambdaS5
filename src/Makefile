@@ -6,10 +6,10 @@ OCAMLBUILD = ocamlbuild -build-dir ../obj -libs unix,str,graph,oUnit -lflags -I,
 
 debug: builddir
 	@rm -f aval
-	@rm -f s5.d.byte
-	$(OCAMLBUILD) aam_test_aval.d.byte s5.d.byte
+	@rm -f as5.d.byte
+	$(OCAMLBUILD) aam_test_aval.d.byte as5.d.byte
 	@ln -s ../obj/analyses/aam/aam_test_aval.d.byte aval
-	@ln -s ../obj/s5.d.byte
+	@ln -s ../obj/as5.d.byte
 
 
 clean:

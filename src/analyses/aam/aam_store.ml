@@ -72,5 +72,5 @@ let es_of_obj locs (_, props) =
           | _ -> failwith "not enough locs for eval")
       props (locs, Prelude.IdMap.empty, empty) in env, store
 
-let string_of ((os, vs, ss, hs, ks, ats, ps) : store) = "gah"
+let string_of ((os, vs, ss, hs, ks, ats, ps) : store) = "gah aam_store string_of I'm lazy"
 (*  "$$$\n\n" ^ (OStore.string_of os) ^ "\n\n" ^ (SStore.string_of ss) ^ "$$$"*)
