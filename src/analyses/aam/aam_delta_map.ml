@@ -1,14 +1,16 @@
-open Aam_shared
-open Aam_collects
-open Aam_object
+module SH = Aam_shared
+module O = Aam_object
+module V = Aam_lattices
+module H = Aam_handle
+module K = Aam_kont
 
 (* still not happy with this design *)
 
-type 'a delta = (addr * 'a) list
-type 'a cdelta = (addr * 'a * bool) list
+type 'a delta = (SH.addr * 'a) list
+type 'a cdelta = (SH.addr * 'a * bool) list
 type deltas =
-  OSet.t cdelta * VSet.t cdelta * HSet.t delta *
-    KSet.t delta * ASet.t delta * PSet.t delta
+  O.OSet.t cdelta * V.VSet.t cdelta * H.HSet.t delta *
+    K.KSet.t delta * O.ASet.t delta * O.PSet.t delta
 
 let empty : deltas = ([], [], [], [], [], [])
 let ds_join_obj a o b (os, vs, hs, ks, ats, ps) =
@@ -34,24 +36,23 @@ let add_prop a x ds = ds_join_prop a x ds
 
 module Flat(ES : Set.S) = struct
   module EltSet = ES
-  type t = EltSet.t AddrMap.t
+  type t = EltSet.t SH.AddrMap.t
 
-  let empty = AddrMap.empty
-  let unsafe_set k x m = AddrMap.add k x m
-  let get k m = try AddrMap.find k m with Not_found -> EltSet.empty
+  let empty = SH.AddrMap.empty
+  let unsafe_set k x m = SH.AddrMap.add k x m
+  let get k m = try SH.AddrMap.find k m with Not_found -> EltSet.empty
   let replay_delta ds m =
     List.fold_left
       (fun ((m', _) as acc) (a, xs) -> begin
-(*        print_endline ("binding "^(Aam_shared.string_of_addr a));*)
         let xs' = get a m in
         if EltSet.subset xs xs' then acc
-        else AddrMap.add a (EltSet.union xs xs') m', true end)
+        else SH.AddrMap.add a (EltSet.union xs xs') m', true end)
       (m, false) ds
-  let fold (f : (addr -> ES.t -> 'a -> 'a)) (m : t) (b : 'a) : 'a =
-    AddrMap.fold f m b
-  let filter_key f m = AddrMap.filter (fun k _ -> f k) m
+  let fold (f : (SH.addr -> ES.t -> 'a -> 'a)) (m : t) (b : 'a) : 'a =
+    SH.AddrMap.fold f m b
+  let filter_key f m = SH.AddrMap.filter (fun k _ -> f k) m
   let string_of m =
-    string_of_map AddrMap.fold string_of_addr
+    SH.string_of_map SH.AddrMap.fold SH.string_of_addr
         (fun xs -> (string_of_int (ES.cardinal xs))^" things") m
 end
 
@@ -66,18 +67,18 @@ end
 
 module AbsCounted(E: Element)(ES : Set.S with type elt = E.t) = struct
   module EltSet = ES
-  type t = Top | Con of EltSet.t AddrMap.t * int AddrMap.t
+  type t = Top | Con of EltSet.t SH.AddrMap.t * int SH.AddrMap.t
 
-  let empty = Con (AddrMap.empty, AddrMap.empty)
+  let empty = Con (SH.AddrMap.empty, SH.AddrMap.empty)
   let get k ac = match ac with
     | Top -> EltSet.singleton E.top
     | Con (elts, _) ->
-      try AddrMap.find k elts with Not_found -> EltSet.empty
-  let count_of k count = try AddrMap.find k count with Not_found -> 0
-  let count k count = AddrMap.add k ((count_of k count) + 1) count
+      try SH.AddrMap.find k elts with Not_found -> EltSet.empty
+  let count_of k count = try SH.AddrMap.find k count with Not_found -> 0
+  let count k count = SH.AddrMap.add k ((count_of k count) + 1) count
   let unsafe_set k x ac = match ac with
     | Top -> Top
-    | Con (m, c) -> Con (AddrMap.add k x m, count k c)
+    | Con (m, c) -> Con (SH.AddrMap.add k x m, count k c)
 
   let set_subsumes s s' =
     if EltSet.is_empty s then EltSet.is_empty s'
@@ -108,45 +109,39 @@ module AbsCounted(E: Element)(ES : Set.S with type elt = E.t) = struct
       let am', c', changed =
         List.fold_left
           (fun ((elts_map, dracula, _) as acc) (k, elts, clobp) ->
-(*            print_endline ("binding "^(Aam_shared.string_of_addr k)^" --> "^
-                              (Aam_shared.string_of_set EltSet.fold E.string_of elts));*)
             let elts' = get k (Con (elts_map, dracula)) in
-(*            print_endline ("old: "^
-                              (Ashared.string_of_set EltSet.fold E.string_of elts'));*)
             if set_subsumes elts' elts then acc
             else if clobp && count_of k dracula <= 1 then begin
-              AddrMap.add k elts elts_map, dracula, true end
+              SH.AddrMap.add k elts elts_map, dracula, true end
             else begin
               let elts'' = (join_set elts elts') in
-(*              print_endline ("new: "^
-                                (Ashared.string_of_set EltSet.fold E.string_of elts''));*)
-              AddrMap.add k elts'' elts_map,
+              SH.AddrMap.add k elts'' elts_map,
               count k dracula,
               true end)
           (am, c, false) ds in
       Con (am', c'), changed
 
-  let fold (f : (addr -> ES.t -> 'a -> 'a)) (dm : t) (b : 'a) : 'a =
+  let fold (f : (SH.addr -> ES.t -> 'a -> 'a)) (dm : t) (b : 'a) : 'a =
     match dm with
     | Top -> b
-    | Con (m, _) -> AddrMap.fold f m b
+    | Con (m, _) -> SH.AddrMap.fold f m b
 
   let filter_key f dm = match dm with
     | Top -> Top
     | Con (m, c) ->
-      Con (AddrMap.filter (fun k _ -> f k) m,
-           AddrMap.filter (fun k _ -> f k) c)
+      Con (SH.AddrMap.filter (fun k _ -> f k) m,
+           SH.AddrMap.filter (fun k _ -> f k) c)
 
   let string_of dm = match dm with
     | Top -> "topstore"
     | Con (m, c) ->
-      string_of_map AddrMap.fold string_of_addr
-        (fun xs -> string_of_set EltSet.fold E.string_of xs) m
+      SH.string_of_map SH.AddrMap.fold SH.string_of_addr
+        (fun xs -> SH.string_of_set EltSet.fold E.string_of xs) m
 
   let map_subsumes m m' =
-    AddrMap.fold
+    SH.AddrMap.fold
       (fun k xs b ->
-        b && try set_subsumes (AddrMap.find k m) xs
+        b && try set_subsumes (SH.AddrMap.find k m) xs
           with Not_found -> false)
       m' true
 

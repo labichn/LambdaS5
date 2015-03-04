@@ -1,21 +1,4 @@
-module P = Prelude
 module SYN = Ljs_syntax
-
-type contour = X of string | P of P.Pos.t
-type time = contour list
-(*
-T is pulled from variable names and source positions
-I is for concrete interpretation
-E is for λS5's built-in environment
-*)
-type addr = T of time | I of int | E of int
-type version = int
-let time0 = []
-let addr0 = T time0
-
-let string_of_contour c = match c with
-  | X s -> s
-  | P p -> Prelude.Pos.string_of_pos p
 
 let string_of_list l s_o_elt =
   if List.length l > 0 then
@@ -30,13 +13,6 @@ let string_of_set fold f xs =
 
 let string_of_map fold k v m =
   "{" ^ (fold (fun k' v' a -> (k k')^" --> "^(v v')^"\n"^a) m " }")
-
-let string_of_time t = (string_of_list t string_of_contour)
-
-let string_of_addr a = "@" ^ (match a with
-  | E i -> "λS5{"^(string_of_int i)^"}"
-  | I i -> "{"^(string_of_int i)^"}"
-  | T t -> string_of_time t)
 
 let rec string_of_exp exp = match exp with
   | SYN.Null _ -> "null"

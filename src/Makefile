@@ -4,16 +4,16 @@ INCLUDES = analyses/aam,analyses/cfg,analyses/cps,analyses/sym,analyses/ses,js,e
 
 OCAMLBUILD = ocamlbuild -build-dir ../obj -libs unix,str,graph,oUnit -lflags -I,../lib -Is $(INCLUDES) -cflags -annot -cflags -I,../lib -Is $(INCLUDES)
 
-debug: builddir
-	@rm -f aval
-	@rm -f as5.d.byte
-	$(OCAMLBUILD) aam_test_aval.d.byte as5.d.byte
-	@ln -s ../obj/analyses/aam/aam_test_aval.d.byte aval
-	@ln -s ../obj/as5.d.byte
+EXE = jaam.d.byte
 
+debug: builddir
+	@rm -f $(EXE)
+	$(OCAMLBUILD) $(EXE)
+	@ln -s ../obj/$(EXE)
 
 clean:
 	rm -rf ../obj
+	@rm -f $(EXE)
 
 builddir:
 	@mkdir ../obj 2> /dev/null || true

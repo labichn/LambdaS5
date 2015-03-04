@@ -1,4 +1,4 @@
-open Aam_env
+open Prelude.IdMap
 open Ljs_syntax
 
 (* That's gold Jerry! Gold! *)
@@ -18,10 +18,10 @@ let alpha_unique ?(not_top_level=true) ?(next=(fun n -> n+1))
       : exp * string Prelude.IdMap.t * Prelude.IdSet.t * int = begin
     let mk_ident x n env' =
       if (not_top_level && (String.sub x 0 1 = "%" && x <> "%or")) then
-        x, n, env_add x x env'
+        x, n, add x x env'
       else
         let x' = x^"_aue_"^(string_of_int n) in
-        x', next n, env_add x x' env' in
+        x', next n, add x x' env' in
     let au_exp' = au_exp env ext i in
     match ex with
     | Null p -> Null (fp p), env, ext, i
@@ -120,11 +120,11 @@ let alpha_unique ?(not_top_level=true) ?(next=(fun n -> n+1))
       EvalAU (fp p, aue, aue', env), env, ext, i'
     | Id (p, x) ->
       let ext', x' =
-        try ext, env_find x env
+        try ext, find x env
         with Not_found -> Prelude.IdSet.add x ext, x in
       Id (fp p, x'), env, ext', i
     | SetBang (p, x, e) ->
-      let x' = try env_find x env with Not_found -> begin
+      let x' = try find x env with Not_found -> begin
         print_endline ("warning! unbound id during alpha unique pass: "^x); x
       end in
       let aue, _, ext', i' = au_exp' e in

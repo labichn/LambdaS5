@@ -1,21 +1,20 @@
-module P = Prelude
-type env = Aam_shared.addr P.IdMap.t
-let empty = P.IdMap.empty
-let env_add = P.IdMap.add
-let env_find = P.IdMap.find
-let env_filter = P.IdMap.filter
-let env_mem = P.IdMap.mem
-let ids_mem = P.IdSet.mem
+module type S = sig
+  include Map.S with type key = string
+  val ids_mem: string -> string list -> bool
+  val subsumes: 'a t -> 'a t -> bool
+  val string_of: ('a -> string) -> 'a t -> string
+end
 
-let subsumes en en' =
-  P.IdMap.fold
-    (fun x a acc -> acc && try env_find x en = a with _ -> false)
-    en' true
+module E = struct
 
-let string_of_env e =
-  if P.IdMap.cardinal e > 0 then
-    "env{\n"^
-      (P.IdMap.fold
-        (fun str addr a -> str^"-->"^(Aam_shared.string_of_addr addr)^"\n"^a)
-        e "") ^ "}"
-  else "env{}"
+  type var = string
+  include Map.Make(struct type t = string let compare = Pervasives.compare end)
+  let ids_mem x xs = List.mem x xs
+  let subsumes e e' =
+    fold (fun x a acc -> acc && try find x e = a with _ -> false) e' true
+  let string_of string_of_cod e =
+    if cardinal e > 0 then
+      "env{\n"^(fold (fun x ad a -> x^"->"^(string_of_cod ad)^"\n"^a) e "")^ "}"
+    else "env{}"
+
+end

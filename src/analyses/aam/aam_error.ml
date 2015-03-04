@@ -1,22 +1,38 @@
-type exp = Ljs_syntax.exp
-type addr = Aam_shared.addr
-type value = addr
-type env = Aam_env.env
-type store = Aam_store.store
+module type S = sig
+  type addr
+  type pos = Prelude.Pos.t
+  exception Throw of addr
+  exception PrimErr of string
+  exception Break of string * addr
+  val string_of: exn -> string
+  val interp_error: pos -> string -> exn
+  val err: string -> 'a
+end
 
-exception Throw of value
-exception PrimErr of string
-exception Break of string * value
+module MakeT(Conf : Aam_conf.S) = struct
+  module type T = S with type addr = Conf.addr
+end
 
-let string_of ex = match ex with
-  | Throw _ -> "throw"
-  | PrimErr s -> "primerr("^s^")"
-  | Break (l, _) -> "break("^l^")"
+module Make(Conf : Aam_conf.S) = struct
 
-let interp_error pos message =
-  raise (PrimErr ("[interp] (" ^ Prelude.Pos.string_of_pos pos ^ ") " ^ message))
-let arity_mismatch_err p xs args =
-  interp_error p "Arity mismatch"
-let err message = 
+  type addr = Conf.addr
+  type pos = Prelude.Pos.t
+
+  exception Throw of addr
+  exception PrimErr of string
+  exception Break of string * addr
+
+  let string_of ex = match ex with
+    | Throw _ -> "throw"
+    | PrimErr s -> "primerr("^s^")"
+    | Break (l, _) -> "break("^l^")"
+    | _ -> "some other error"
+
+  let interp_error pos message =
+    raise (PrimErr ("[interp] (" ^ Conf.string_of_pos pos ^ ") " ^ message))
+
+  let err message = 
     Prelude.eprintf "%s\n" message;
     failwith "Runtime error"
+
+end

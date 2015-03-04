@@ -15,248 +15,308 @@
   Problem in OCaml; without it I would still have three extra constructors
   around all of my values.
 *)
-module SYN = Ljs_syntax
-open Aam_env
-open Aam_shared
+module SH = Aam_shared
 
-module type LATTYPE = sig type t end
+module type LatType = sig type t end
 
-module type VLATTICE = sig
-  include LATTYPE
-
+module type Lattice = sig
+  include LatType
   (** joins two abstract values together *)
   val join: t -> t -> t
-
   (** whether the given abstract value's extensional representation is a
       finite  *)
   val singletonp: t -> bool
-
-  (** does [v] subsume [v'], i.e. v' ⊑ v *)
+  (** [subsumes v v'] determines whether [v] subsumes [v'], i.e. v' ⊑ v *)
   val subsumes: t -> t -> bool
-
   (** returns a string representation of the given abstract value *)
   val string_of: t -> string
-
   (** returns the nearest top value *)
   val to_top: t -> t
-
-end
-module Types(X : sig type t type a end) = struct type t = X.t type a = X.a end
-
-module BoolT = struct type t = [ `True | `False | `BoolT ] end
-module type BoolS = sig
-  type t0 = private [> BoolT.t]
-  include VLATTICE with type t = t0
-end
-module BoolF(L : BoolS) = struct
-  type t0 = BoolT.t
-  type t = L.t
-  (* yes, having verbose annotations before every argument in the
-     definitions is a pain, but not nearly as bad as three layers of
-     type constructors for each use of an avalue... *)
-  let join ((`True | `False | `BoolT) as b : t0)
-      ((`True | `False | `BoolT) as b' : t0) : t = match b, b' with
-    | `True, `True | `False, `False -> b
-    | _ -> `BoolT
-  let singletonp ((`True | `False | `BoolT) as b : t0) : bool =
-    match b with `True | `False -> true | _ -> false
-  let subsumes ((`True | `False | `BoolT) as b : t0)
-      ((`True | `False | `BoolT) as b' : t0) = match b, b' with
-    | `BoolT, _ -> true | b, b' when b = b' -> true | _ -> false
-  let string_of ((`True | `False | `BoolT) as b : t0) = match b with
-    | `True -> "true" | `False -> "false" | `BoolT -> "bool⊤"
-  let to_top ((`True | `False | `BoolT) as b : t0) = `BoolT
-end
-
-type env = Aam_env.env
-module ClosT = struct
-  type t = [ `Clos of env * Prelude.id list * SYN.exp | `ClosT ]
-end
-module type ClosS = sig
-  type t0 = private [> ClosT.t]
-  include VLATTICE with type t = t0
-end
-module ClosF(L : ClosS) = struct
-  type t0 = ClosT.t
-  type t = L.t
-  let join ((`Clos _ | `ClosT) as c : t0)
-      ((`Clos _ | `ClosT) as c' : t0) : t =
-    if c = c' then c else `ClosT
-  let singletonp ((`Clos _ | `ClosT) as c : t0) =
-    match c with `Clos _ -> true | _ -> false
-  let subsumes ((`Clos _ | `ClosT) as c : t0)
-      ((`Clos _ | `ClosT) as c' : t0) = match c, c' with
-      | `ClosT, _ -> true
-      | `Clos (env, xs, exp), `Clos (env', xs', exp') ->
-        Aam_env.subsumes env env' && xs = xs' && compare exp exp' = 0
-      | _ -> false
-  let string_of ((`Clos _ | `ClosT) as c : t0) : string = match c with
-    | `Clos (env, xs, exp) ->
-      "clos("^(string_of_env env)^", "^
-        (string_of_list xs (fun x -> x))^", "^
-        (string_of_exp exp)^")"
-    | `ClosT -> "clos⊤"
-  let to_top ((`Clos _ | `ClosT) as c : t0) = `ClosT
-end
-
-module ObjT = struct type t = [ `Obj of addr | `ObjT ] end
-module type ObjS = sig
-  type t0 = private [> ObjT.t]
-  include VLATTICE with type t = t0
-end
-module ObjF(L : ObjS) = struct
-  type t0 = ObjT.t
-  type t = L.t
-  let join ((`Obj _ | `ObjT) as o : t0)
-      ((`Obj _ | `ObjT) as o' : t0): t =
-    if o = o' then o else `ObjT
-  let singletonp ((`Obj _ | `ObjT) as o : t0) =
-    match o with `Obj _ -> true | _ -> false
-  let subsumes ((`Obj _ | `ObjT) as o : t0)
-      ((`Obj _ | `ObjT) as o' : t0) : bool =
-    match o, o' with `ObjT, _ -> true | _ -> o = o'
-  let string_of ((`Obj _ | `ObjT) as o : t0) = match o with
-    | `Obj a -> "obj"^(string_of_addr a)
-    | `ObjT -> "obj⊤"
-  let to_top ((`Obj _ | `ObjT) as o : t0) = `ObjT
-end
-
-module ConstNumT = struct type t = [ `Num of float | `NumT ] end
-module type ConstNumS = sig
-  type t0 = private [> ConstNumT.t]
-  include VLATTICE with type t = t0
-end
-module ConstNumF(L : ConstNumS) = struct
-  type t0 = ConstNumT.t
-  type t = L.t
-  let join ((`Num _ | `NumT) as n : t0)
-      ((`Num _ | `NumT) as n' : t0) : t =
-    if n = n' then n else `NumT
-  let singletonp ((`Num _ | `NumT) as n : t0) =
-    match n with `Num _ -> true | _ -> false
-  let subsumes ((`Num _ | `NumT) as n : t0)
-      ((`Num _ | `NumT) as n' : t0) =
-    match n, n' with `NumT, _ -> true | _ -> compare n n' = 0
-  let string_of ((`Num _ | `NumT) as n : t0) : string =
-    match n with `Num f -> string_of_float f | `NumT -> "num⊤"
-  let to_top ((`Num _ | `NumT) as n : t0) = `NumT
-end
-
-module ConstStrT = struct type t = [ `Str of string | `StrT ] end
-module type ConstStrS = sig
-  type t0 = private [> ConstStrT.t]
-  include VLATTICE with type t = t0
-end
-module ConstStrF(L : ConstStrS) = struct
-  type t0 = ConstStrT.t
-  type t = L.t
-  let join ((`Str _ | `StrT) as s : t0)
-      ((`Str _ | `StrT) as s' : t0) : t =
-    if s = s' then s else `StrT
-  let singletonp ((`Str _ | `StrT) as s : t0) =
-    match s with `Str _ -> true | _ -> false
-  let subsumes ((`Str _ | `StrT) as s : t0)
-      ((`Str _ | `StrT) as s' : t0) =
-    match s, s' with `StrT, _ -> true | _ -> s = s'
-  let string_of ((`Str _ | `StrT) as s : t0) : string =
-    match s with `Str s -> "'"^s^"'" | `StrT -> "string⊤"
-  let to_top ((`Str _ | `StrT) as s : t0) = `StrT
-end
-
-module NullT = struct type t = [ `Null ] end
-module type NullS = sig
-  type t0 = private [> NullT.t]
-  include VLATTICE with type t = t0
-end
-module NullF(L : NullS) = struct
-  type t0 = NullT.t
-  type t = L.t
-  let join (`Null : t0) (`Null : t0): t = `Null
-  let singletonp (`Null : t0) = true
-  let subsumes (`Null : t0) (`Null : t0) : bool = true
-  let string_of (`Null : t0) = "null"
-  let to_top (`Null : t0) = `Null
-end
-
-module UndefT = struct type t = [ `Undef ] end
-module type UndefS = sig
-  type t0 = private [> UndefT.t]
-  include VLATTICE with type t = t0
-end
-module UndefF(L : UndefS) = struct
-  type t0 = UndefT.t
-  type t = L.t
-  let join (`Undef : t0) (`Undef : t0): t = `Undef
-  let singletonp (`Undef : t0) = true
-  let subsumes (`Undef : t0) (`Undef : t0) : bool = true
-  let string_of (`Undef : t0) = "undef"
-  let to_top (`Undef : t0) = `Undef
-end
-
-module DelayT = struct type t = [ `Delay of addr ] end
-module type DelayS = sig
-  type t0 = private [> DelayT.t]
-  include VLATTICE with type t = t0
-end
-module DelayF(L : DelayS) = struct
-  type t0 = DelayT.t
-  type t = L.t
-  let join (`Delay _ : t0)
-      (`Delay _ : t0): t =
-    failwith
-      "You're automatically joining a delayed lookup... you screwed up."
-  let singletonp (`Delay _ : t0) =
-    failwith
-      "Cannot determine whether a delayed lookup is a singletonp w/o store."
-  let subsumes (`Delay a : t0)
-      (`Delay a' : t0) : bool = a = a'
-  let string_of (`Delay a : t0) = "delay("^(string_of_addr a)^")"
-  let to_top (`Delay a : t0) = `Top
-end
-
-(* To change a lattice, just swap out one of the AValueT types (I),
- * swap one of the AValueF internal value module's functors (II),
- * and swap out the respective creator (III). *)
-module AValueT = struct
-  type 'a t =
-    (* I *)
-    [ BoolT.t | ConstNumT.t | UndefT.t | NullT.t | ConstStrT.t | ClosT.t |
-      DelayT.t | ObjT.t | `Top | `Bot ]
-  let compare = Pervasives.compare
-end
-module type AValueS = sig
-  type t0 = private [> a AValueT.t]
-  and a = <t:t0>
-  include VLATTICE with type t = t0
   val compare: t -> t -> int
 
+end
+
+module type S = sig
+  type addr
+  type env
+  module  Bool : Lattice with type t =
+    private [> `Bool of bool | `BoolT ]
+  module  Clos : Lattice with type t =
+    private [> `Clos of env * string list * Ljs_syntax.exp | `ClosT ]
+  module   Obj : Lattice with type t =
+    private [> `Obj of addr | `ObjT ]
+  module   Num : Lattice with type t =
+    private [> `Num of float | `NumT ]
+  module   Str : Lattice with type t =
+    private [> `Str of string | `StrT ]
+  module  Null : Lattice with type t =
+    private [> `Null ]
+  module Undef : Lattice with type t =
+    private [> `Undef ]
+  module Delay : Lattice with type t =
+    private [> `Delay of addr ]
+  type t = private
+  [> `Bool of bool | `BoolT
+  |  `Clos of env * string list * Ljs_syntax.exp | `ClosT
+  |  `Obj of addr | `ObjT
+  |  `Num of float | `NumT
+  |  `Str of string | `StrT
+  |  `Null
+  |  `Undef
+  |  `Delay of addr
+  | `Top | `Bot ]
+  val string_of: t -> string
+  val join: t -> t -> t
+  val subsumes: t -> t -> bool
+  val singletonp: t -> bool
   val bool: bool -> t
-  val clos: env -> Prelude.id list -> SYN.exp -> t
+  val clos: env -> string list -> Ljs_syntax.exp -> t
   val delay: addr -> t
   val num: float -> t
   val obj: addr -> t
   val str: string -> t
+  val compare: t -> t -> int
+  module VSet : Set.S with type elt = t
 end
-module AValueF
-  (L : AValueS)
-   =
+
+module MakeT(C : Aam_conf.S)(E : Aam_env.S) = struct
+  module type T = S with type addr = C.addr and type env = C.addr E.t
+end
+
+module Make(C : Aam_conf.S)(E : Aam_env.S) = struct
+
+  type addr = C.addr
+  type env = addr E.t
+
+  module type LATTYPE = sig type t end
+  module type VLATTICE = sig
+    include LATTYPE
+    (** joins two abstract values together *)
+    val join: t -> t -> t
+    (** whether the given abstract value's extensional representation is a finite  *)
+    val singletonp: t -> bool
+    (** does [v] subsume [v'], i.e. v' ⊑ v *)
+    val subsumes: t -> t -> bool
+    (** returns a string representation of the given abstract value *)
+    val string_of: t -> string
+    (** returns the nearest top value *)
+    val to_top: t -> t
+  end
+  module Types(X : sig type t type a end) = struct type t = X.t type a = X.a end
+
+  module BoolT = struct type t = [ `Bool of bool | `BoolT ] end
+  module type BoolS = sig
+    type t0 = private [> BoolT.t]
+    include VLATTICE with type t = t0
+  end
+  module BoolF(L : BoolS) = struct
+    type t0 = BoolT.t
+    type t = L.t
+  (* yes, having verbose annotations before every argument in the
+     definitions is a pain, but not nearly as bad as three layers of
+     type constructors for each use of an avalue... *)
+    let join b b' = match b, b' with
+      | `Bool b0, `Bool b1 when b0 = b1 -> b
+      | _ -> `BoolT
+    let singletonp b = match b with `Bool _ -> true | _ -> false
+    let subsumes b b' = match b, b' with
+        | `BoolT, _ -> true | b, b' when b = b' -> true | _ -> false
+    let string_of b = match b with
+      | `Bool b' -> string_of_bool b'
+      | `BoolT -> "bool⊤"
+      | _ -> failwith "default case required by ocaml"
+    let to_top b = `BoolT
+    let compare = Pervasives.compare
+  end
+
+  module ClosT = struct
+    type t = [ `Clos of env * string list * Ljs_syntax.exp | `ClosT ]
+  end
+  module type ClosS = sig
+    type t0 = private [> ClosT.t]
+    include VLATTICE with type t = t0
+  end
+  module ClosF(L : ClosS) = struct
+    type t0 = ClosT.t
+    type t = L.t
+    let join c c' =
+      if c = c' then c else `ClosT
+    let singletonp c =
+      match c with `Clos _ -> true | _ -> false
+    let subsumes c c' = match c, c' with
+        | `ClosT, _ -> true
+        | `Clos (env, xs, exp), `Clos (env', xs', exp') ->
+          E.subsumes env env' && xs = xs' && compare exp exp' = 0
+        | _ -> false
+    let string_of c = match c with
+      | `Clos (env, xs, exp) ->
+        "clos("^(E.string_of C.string_of_addr env)^", "^
+          (SH.string_of_list xs (fun x->x))^", "^
+          (SH.string_of_exp exp)^")"
+      | `ClosT -> "clos⊤"
+      | _ -> failwith "default case required by ocaml"
+    let to_top _ = `ClosT
+    let compare = Pervasives.compare
+  end
+
+  module ObjT = struct type t = [ `Obj of addr | `ObjT ] end
+  module type ObjS = sig
+    type t0 = private [> ObjT.t]
+    include VLATTICE with type t = t0
+  end
+  module ObjF(L : ObjS) = struct
+    type t0 = ObjT.t
+    type t = L.t
+    let join o o' =
+      if o = o' then o else `ObjT
+    let singletonp o =
+      match o with `Obj _ -> true | _ -> false
+    let subsumes o o' =
+      match o, o' with `ObjT, _ -> true | _ -> o = o'
+    let string_of o = match o with
+      | `Obj a -> "obj"^(C.string_of_addr a)
+      | `ObjT -> "obj⊤"
+      | _ -> failwith "default case required by ocaml"
+    let to_top _ = `ObjT
+    let compare = Pervasives.compare
+  end
+
+  module ConstNumT = struct type t = [ `Num of float | `NumT ] end
+  module type ConstNumS = sig
+    type t0 = private [> ConstNumT.t]
+    include VLATTICE with type t = t0
+  end
+  module ConstNumF(L : ConstNumS) = struct
+    type t0 = ConstNumT.t
+    type t = L.t
+    let join n n' =
+      if n = n' then n else `NumT
+    let singletonp n =
+      match n with `Num _ -> true | _ -> false
+    let subsumes n n' =
+      match n, n' with `NumT, _ -> true | _ -> compare n n' = 0
+    let string_of n =
+      match n with `Num f -> string_of_float f | `NumT -> "num⊤"
+      | _ -> failwith "default case required by ocaml"
+    let to_top _ = `NumT
+    let compare = Pervasives.compare
+  end
+
+  module ConstStrT = struct type t = [ `Str of string | `StrT ] end
+  module type ConstStrS = sig
+    type t0 = private [> ConstStrT.t]
+    include VLATTICE with type t = t0
+  end
+  module ConstStrF(L : ConstStrS) = struct
+    type t0 = ConstStrT.t
+    type t = L.t
+    let join s s' =
+      if s = s' then s else `StrT
+    let singletonp s =
+      match s with `Str _ -> true | _ -> false
+    let subsumes s s' =
+      match s, s' with `StrT, _ -> true | _ -> s = s'
+    let string_of s =
+      match s with `Str s -> "'"^s^"'" | `StrT -> "string⊤"
+      | _ -> failwith "default case required by ocaml"
+    let to_top _ = `StrT
+    let compare = Pervasives.compare
+  end
+
+  module NullT = struct type t = [ `Null ] end
+  module type NullS = sig
+    type t0 = private [> NullT.t]
+    include VLATTICE with type t = t0
+  end
+  module NullF(L : NullS) = struct
+    type t0 = NullT.t
+    type t = L.t
+    let join _ _ = `Null
+    let singletonp _ = true
+    let subsumes _ _ = true
+    let string_of _ = "null"
+    let to_top _ = `Null
+    let compare = Pervasives.compare
+  end
+
+  module UndefT = struct type t = [ `Undef ] end
+  module type UndefS = sig
+    type t0 = private [> UndefT.t]
+    include VLATTICE with type t = t0
+  end
+  module UndefF(L : UndefS) = struct
+    type t0 = UndefT.t
+    type t = L.t
+    let join _ _ = `Undef
+    let singletonp _ = true
+    let subsumes _ _ = true
+    let string_of _ = "undef"
+    let to_top _ = `Undef
+    let compare = Pervasives.compare
+  end
+
+  module DelayT = struct type t = [ `Delay of addr ] end
+  module type DelayS = sig
+    type t0 = private [> DelayT.t]
+    include VLATTICE with type t = t0
+  end
+  module DelayF(L : DelayS) = struct
+    type t0 = DelayT.t
+    type t = L.t
+    let join _ _ =
+      failwith "You're joining a delayed lookup... you screwed up."
+    let singletonp _ =
+      failwith "Cannot determine whether a delayed lookup is a singletonp w/o store."
+    let subsumes a a' = a = a'
+    let string_of = function
+      | `Delay a -> "delay("^(C.string_of_addr a)^")"
+      | _ -> failwith "default case required by ocaml"
+    let to_top _ = `Top
+    let compare = Pervasives.compare
+  end
+    
+  module AValueT = struct
+    type 'a t =
+    (* To change a lattice, just swap out one of these types... *)
+    [ BoolT.t | ConstNumT.t | UndefT.t | NullT.t | ConstStrT.t | ClosT.t |
+        DelayT.t | ObjT.t | `Top | `Bot ]
+    let compare = Pervasives.compare
+  end
+  module type AValueS = sig
+    type t0 = private [> a AValueT.t]
+    and a = <t:t0>
+    include VLATTICE with type t = t0
+    val compare: t -> t -> int
+
+    val bool: bool -> t
+    val clos: env -> string list -> Ljs_syntax.exp -> t
+    val delay: addr -> t
+    val num: float -> t
+    val obj: addr -> t
+    val str: string -> t
+  end
+  module AValueF
+    (L : AValueS)
+    =
   struct
     type t0 = L.a AValueT.t
     include Types(L)
 
-    (* II *)
+    (* swap one of these functors...
+       |
+       v *)
     module   Bool = BoolF(L)
     module   Clos = ClosF(L)
     module  Delay = DelayF(L)
     module   Null = NullF(L)
     module    Num = ConstNumF(L)
     module    Obj = ObjF(L)
-    module String = ConstStrF(L)
+    module Str = ConstStrF(L)
     module  Undef = UndefF(L)
 
-    (* III *)
-    let bool (b : bool) = if b then `True else `False
-    let clos (env : env) (xs : Prelude.id list) (exp : SYN.exp) =
+    (* and swap one of these creators, then you're done! *)
+    let bool (b : bool) = `Bool b
+    let clos (env : env) (xs : string list) (exp : Ljs_syntax.exp) =
       `Clos (env, xs, exp)
     let delay (a : addr) = `Delay a
     let num (f : float) = `Num f
@@ -272,7 +332,7 @@ module AValueF
       |   (#Null.t0 as n),   (#Null.t0 as n') ->   Null.join n n'
       |    (#Num.t0 as n),    (#Num.t0 as n') ->    Num.join n n'
       |    (#Obj.t0 as o),    (#Obj.t0 as o') ->    Obj.join o o'
-      | (#String.t0 as s), (#String.t0 as s') -> String.join s s'
+      | (#Str.t0 as s), (#Str.t0 as s') -> Str.join s s'
       |  (#Undef.t0 as u),  (#Undef.t0 as u') ->  Undef.join u u'
       | _ -> `Top
 
@@ -283,7 +343,7 @@ module AValueF
       |    #Obj.t0 as o ->    Obj.singletonp o
       |   #Null.t0 as n ->   Null.singletonp n
       |    #Num.t0 as n ->    Num.singletonp n
-      | #String.t0 as s -> String.singletonp s
+      | #Str.t0 as s -> Str.singletonp s
       |  #Undef.t0 as u ->  Undef.singletonp u
       | _ -> false
 
@@ -295,7 +355,7 @@ module AValueF
       |   (#Null.t0 as n),   (#Null.t0 as n') ->   Null.subsumes n n'
       |    (#Num.t0 as n),    (#Num.t0 as n') ->    Num.subsumes n n'
       |    (#Obj.t0 as o),    (#Obj.t0 as o') ->    Obj.subsumes o o'
-      | (#String.t0 as s), (#String.t0 as s') -> String.subsumes s s'
+      | (#Str.t0 as s), (#Str.t0 as s') -> Str.subsumes s s'
       |  (#Undef.t0 as u),  (#Undef.t0 as u') ->  Undef.subsumes u u'
       | _ -> false
 
@@ -307,10 +367,9 @@ module AValueF
       |   #Null.t0 as n ->   Null.string_of n
       |    #Num.t0 as n ->    Num.string_of n
       |    #Obj.t0 as o ->    Obj.string_of o
-      | #String.t0 as s -> String.string_of s
+      | #Str.t0 as s -> Str.string_of s
       |  #Undef.t0 as u ->  Undef.string_of u
       | _ -> failwith "somehow fell through AValue's string_of"
-     (* ^ Why is this last case needed? Isn't the function complete? *)
 
     let to_top (v : t) : t = match v with
       | `Top -> `Top | `Bot -> `Top
@@ -320,24 +379,44 @@ module AValueF
       |   #Null.t0 as n ->   Null.to_top n
       |    #Num.t0 as n ->    Num.to_top n
       |    #Obj.t0 as o ->    Obj.to_top o
-      | #String.t0 as s -> String.to_top s
+      | #Str.t0 as s -> Str.to_top s
       |  #Undef.t0 as u ->  Undef.to_top u
       | _ -> failwith "somehow fell through AValue's to_top"
 
     let compare = Pervasives.compare
 
   end
-module type AValueFixpoint = sig
-  type t0 = a AValueT.t
-  and a = <t:t0>
-  include VLATTICE with type t = t0
-  val compare: t -> t -> int
-  val bool: bool -> t
-  val clos: env -> Prelude.id list -> SYN.exp -> t
-  val delay: addr -> t
-  val num: float -> t
-  val obj: addr -> t
-  val str: string -> t
-end
-module rec AValue : AValueFixpoint = AValueF(AValue)
+  module type AValueFixpoint = sig
+    type t0 = a AValueT.t
+    and a = <t:t0>
+    include VLATTICE with type t = t0
+    module  Bool : Lattice with type t =
+      private [> `Bool of bool | `BoolT ]
+    module  Clos : Lattice with type t =
+      private [> `Clos of env * string list * Ljs_syntax.exp | `ClosT ]
+    module   Obj : Lattice with type t =
+      private [> `Obj of addr | `ObjT ]
+    module   Num : Lattice with type t =
+      private [> `Num of float | `NumT ]
+    module   Str : Lattice with type t =
+      private [> `Str of string | `StrT ]
+    module  Null : Lattice with type t =
+      private [> `Null ]
+    module Undef : Lattice with type t =
+      private [> `Undef ]
+    module Delay : Lattice with type t =
+      private [> `Delay of addr ]
+    val compare: t -> t -> int
+    val bool: bool -> t
+    val clos: env -> string list -> Ljs_syntax.exp -> t
+    val delay: addr -> t
+    val num: float -> t
+    val obj: addr -> t
+    val str: string -> t
+    val compare: t -> t -> int
+  end
+  module rec AValue : AValueFixpoint = AValueF(AValue)
+  include AValue
+  module VSet = Set.Make(struct type u = t type t = u let compare = Pervasives.compare end)
 
+end

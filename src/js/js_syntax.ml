@@ -50,10 +50,10 @@ and expr =
 and case =
   | Case of Pos.t * expr * stmt
   | Default of Pos.t * stmt
-          
+
 and varDecl =
   | VarDecl of id * expr option
-          
+
 and stmt =
   | Block of Pos.t * block
   | Var of Pos.t * varDecl list
